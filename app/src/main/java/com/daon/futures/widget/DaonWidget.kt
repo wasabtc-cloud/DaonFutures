@@ -33,7 +33,7 @@ class DaonWidget:GlanceAppWidget(){
             val openApp=Intent(context,MainActivity::class.java)
             Column(
                 GlanceModifier.fillMaxSize()
-                    .background(ColorProvider(Color(0xFF171A21)))
+                    .background(ColorProvider(Color(0xFF171A21), Color(0xFF171A21)))
                     .padding(14.dp)
                     .clickable(actionStartActivity(openApp)),
                 verticalAlignment=Alignment.Vertical.CenterVertically
