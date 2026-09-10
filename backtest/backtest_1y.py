@@ -23,8 +23,8 @@ def get(symbol):
   if not x.empty:p.append(x)
   d+=timedelta(days=1)
  r=pd.concat(p).iloc[:,:12];r.columns=['time','open','high','low','close','volume','ct','qv','tr','tb','tq','ig']
- for c in ['open','high','low','close','volume']:r[c]=pd.to_numeric(r[c],errors='coerce')
- r['time']=pd.to_datetime(pd.to_numeric(r.time),unit='ms',utc=True);return r.dropna().drop_duplicates('time').set_index('time').sort_index()[['open','high','low','close','volume']]
+ for c in ['time','open','high','low','close','volume']:r[c]=pd.to_numeric(r[c],errors='coerce')
+ r=r.dropna(subset=['time','open','high','low','close','volume']);r['time']=pd.to_datetime(r.time.astype('int64'),unit='ms',utc=True);return r.drop_duplicates('time').set_index('time').sort_index()[['open','high','low','close','volume']]
 def ema(s,n):return s.ewm(span=n,adjust=False).mean()
 def rsi(s,n=14):
  x=s.diff();u=x.clip(lower=0).ewm(alpha=1/n,adjust=False).mean();v=(-x.clip(upper=0)).ewm(alpha=1/n,adjust=False).mean();return (100-100/(1+u/v.replace(0,np.nan))).fillna(100)
