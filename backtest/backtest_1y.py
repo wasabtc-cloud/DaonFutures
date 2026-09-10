@@ -1,8 +1,8 @@
-import io,zipfile,urllib.request
+import io,zipfile,urllib.request,itertools
 from datetime import date,timedelta
 import pandas as pd
 import numpy as np
-START='2025-09-10';SYMBOLS=['BTCUSDT','ETHUSDT'];INTERVAL='15m';SL=.01;TP=.015;FEE=.0005
+START='2025-09-10';SYMBOLS=['BTCUSDT','ETHUSDT'];INTERVAL='15m';FEE=.0005
 
 def rz(url):
  try:
@@ -40,47 +40,46 @@ def st(d,n=10,k=3):
 def adx(d,n=14):
  u=d.high.diff();dn=-d.low.diff();p=pd.Series(np.where((u>dn)&(u>0),u,0.),index=d.index);m=pd.Series(np.where((dn>u)&(dn>0),dn,0.),index=d.index);a=atr(d,n);pi=100*p.ewm(alpha=1/n,adjust=False).mean()/a;mi=100*m.ewm(alpha=1/n,adjust=False).mean()/a;dx=100*(pi-mi).abs()/(pi+mi).replace(0,np.nan);return dx.ewm(alpha=1/n,adjust=False).mean()
 def prep(d):
- d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean();d['macd']=ema(d.close,12)-ema(d.close,26);d['macds']=ema(d['macd'],9)
+ d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean();d['macd']=ema(d.close,12)-ema(d.close,26);d['macds']=ema(d.macd,9)
  h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h1['st']=st(h1);h1['adx']=adx(h1);h4['e200']=ema(h4.close,200);h4['slope']=h4.e200-h4.e200.shift(6)
  return d.join(h1[['st','adx']].rename(columns={'st':'h1st','adx':'h1adx'})).ffill().join(h4[['e200','slope']].rename(columns={'e200':'h4e200','slope':'h4slope'})).ffill()
 def base(d):
  cu=(d.close>d.e20)&(d.close.shift()<=d.e20.shift());cd=(d.close<d.e20)&(d.close.shift()>=d.e20.shift());v=d.volume>d.vma
- lo=(d.e20>d.e50)&(d.h1st==1)&cu&v&d.rsi.between(50,70)&(d.close>d.h4e200)
- sh=(d.e20<d.e50)&(d.h1st==-1)&cd&v&d.rsi.between(30,50)&(d.close<d.h4e200)
- return pd.Series(np.where(lo,1,np.where(sh,-1,0)),index=d.index)
-def variants(d):
- b=base(d);L=b==1;S=b==-1
+ L=(d.e20>d.e50)&(d.h1st==1)&cu&v&d.rsi.between(50,70)&(d.close>d.h4e200)
+ S=(d.e20<d.e50)&(d.h1st==-1)&cd&v&d.rsi.between(30,50)&(d.close<d.h4e200)
+ return L,S
+def signals(d):
+ L,S=base(d)
  return {
- 'Baseline L+S':b,
- 'LONG only':pd.Series(np.where(L,1,0),index=d.index),
- 'LONG + EMA200 slope':pd.Series(np.where(L&(d.h4slope>0),1,0),index=d.index),
- 'LONG + ADX20':pd.Series(np.where(L&(d.h1adx>=20),1,0),index=d.index),
- 'LONG + Vol1.2x':pd.Series(np.where(L&(d.volume>d.vma*1.2),1,0),index=d.index),
- 'LONG + MACD state':pd.Series(np.where(L&(d.macd>d.macds),1,0),index=d.index),
- 'LONG RSI52-65':pd.Series(np.where(L&d.rsi.between(52,65),1,0),index=d.index),
- 'Asym L + strict S':pd.Series(np.where(L,1,np.where(S&(d.h4slope<0)&(d.h1adx>=25),-1,0)),index=d.index)
+ 'LONG':np.where(L,1,0),
+ 'LONG_MACD':np.where(L&(d.macd>d.macds),1,0),
+ 'LONG_VOL12':np.where(L&(d.volume>d.vma*1.2),1,0),
+ 'LONG_SLOPE':np.where(L&(d.h4slope>0),1,0),
+ 'LONG_MACD_VOL12':np.where(L&(d.macd>d.macds)&(d.volume>d.vma*1.2),1,0),
+ 'ASYM_STRICT_SHORT':np.where(L,1,np.where(S&(d.h4slope<0)&(d.h1adx>=25),-1,0))
  }
-def run(d,s):
- bal=100.;peak=100.;mdd=0.;tr=[];i=0
- while i<len(d)-1:
+def run(d,s,sl,tp,lev):
+ s=pd.Series(s,index=d.index);bal=100.;peak=100.;mdd=0.;n=w=0;i=0
+ while i<len(d)-1 and bal>1:
   side=int(s.iloc[i]);
-  if not side:i+=1;continue
-  e=d.close.iloc[i];sl=e*(1-SL) if side==1 else e*(1+SL);tp=e*(1+TP) if side==1 else e*(1-TP);j=i+1
+  if side==0:i+=1;continue
+  e=d.close.iloc[i];stop=e*(1-sl) if side==1 else e*(1+sl);take=e*(1+tp) if side==1 else e*(1-tp);j=i+1
   while j<len(d):
-   hs=d.low.iloc[j]<=sl if side==1 else d.high.iloc[j]>=sl;ht=d.high.iloc[j]>=tp if side==1 else d.low.iloc[j]<=tp
-   if hs or ht:x=sl if hs else tp;o='SL' if hs else 'TP';break
+   hs=d.low.iloc[j]<=stop if side==1 else d.high.iloc[j]>=stop;ht=d.high.iloc[j]>=take if side==1 else d.low.iloc[j]<=take
+   if hs or ht:x=stop if hs else take;win=not hs;break
    j+=1
   if j>=len(d):break
-  before=bal;bal+=bal*((x/e-1)*side-2*FEE);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);tr.append((before,bal,o));i=j+1
- n=len(tr);w=sum(x[2]=='TP' for x in tr);gp=sum(max(0,x[1]-x[0]) for x in tr);gl=-sum(min(0,x[1]-x[0]) for x in tr)
- return bal,n,100*w/n if n else 0,gp/gl if gl else 999,100*mdd
+  r=((x/e-1)*side-2*FEE)*lev;bal*=max(0,1+r);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);n+=1;w+=int(win);i=j+1
+ return bal,n,(100*w/n if n else 0),100*mdd
 def main():
  rows=[]
  for sym in SYMBOLS:
-  print('Downloading',sym,flush=True);d=prep(get(sym));d=d.loc[d.index>=pd.Timestamp(START,tz='UTC')+pd.Timedelta(days=35)]
-  cut=d.index[int(len(d)*0.5)]
-  for name,s in variants(d).items():
-   for period,dd,ss in [('FULL',d,s),('H2',d.loc[cut:],s.loc[cut:])]:
-    b,n,w,p,m=run(dd,ss);rows.append([sym,name,period,round(b,2),round(b-100,2),n,round(w,2),round(p,2),round(m,2)])
- out=pd.DataFrame(rows,columns=['Symbol','Strategy','Period','Final_USDT','Return_pct','Trades','WinRate_pct','ProfitFactor','MaxDD_pct']);print(out.to_string(index=False));out.to_csv('backtest_results.csv',index=False)
+  print('Downloading',sym,flush=True);d=prep(get(sym));d=d.loc[d.index>=pd.Timestamp(START,tz='UTC')+pd.Timedelta(days=35)];cut=d.index[int(len(d)*.5)];sig=signals(d)
+  for name,s in sig.items():
+   for sl,tp,lev in itertools.product([.008,.01,.012],[.012,.015,.02,.025,.03],[1,2,3]):
+    full=run(d,s,sl,tp,lev);h2=run(d.loc[cut:],pd.Series(s,index=d.index).loc[cut:],sl,tp,lev)
+    rows.append([sym,name,sl,tp,lev,round(full[0],2),round(full[0]-100,2),full[1],round(full[2],2),round(full[3],2),round(h2[0],2),round(h2[0]-100,2),h2[1],round(h2[2],2),round(h2[3],2)])
+ out=pd.DataFrame(rows,columns=['Symbol','Strategy','SL','TP','Lev','Final_USDT','Return_pct','Trades','WinRate_pct','MaxDD_pct','H2_Final','H2_Return','H2_Trades','H2_WinRate','H2_MaxDD'])
+ out['Target200']=out.Final_USDT>=200;out['Robust']=out.Target200&(out.H2_Final>100)&(out.MaxDD_pct<=35)&(out.Trades>=20)
+ out=out.sort_values(['Robust','Final_USDT','H2_Final'],ascending=[False,False,False]);print(out.head(40).to_string(index=False));out.to_csv('backtest_results.csv',index=False)
 if __name__=='__main__':main()
