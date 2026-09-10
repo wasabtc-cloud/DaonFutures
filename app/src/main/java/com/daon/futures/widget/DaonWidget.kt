@@ -35,9 +35,12 @@ class DaonWidget : GlanceAppWidget() {
             val settingTp = String.format(Locale.KOREA, "%.1f%%", p.getFloat("tp", 1.5f))
             val openApp = Intent(context, MainActivity::class.java)
 
-            val darkText = ColorProvider(Color(0xFF111318), Color(0xFF111318))
-            val muted = ColorProvider(Color(0xFF5E6470), Color(0xFF5E6470))
-            val bg = ColorProvider(Color(0xFFF5F7FA), Color(0xFFF5F7FA))
+            val white = ColorProvider(Color(0xFFF7F9FC), Color(0xFFF7F9FC))
+            val muted = ColorProvider(Color(0xFF9AA5B4), Color(0xFF9AA5B4))
+            val green = ColorProvider(Color(0xFF19D38A), Color(0xFF19D38A))
+            val red = ColorProvider(Color(0xFFFF4D63), Color(0xFFFF4D63))
+            val bg = ColorProvider(Color(0xFF0D1420), Color(0xFF0D1420))
+            val accent = ColorProvider(Color(0xFF8B7CFF), Color(0xFF8B7CFF))
 
             Column(
                 GlanceModifier.fillMaxSize()
@@ -46,15 +49,20 @@ class DaonWidget : GlanceAppWidget() {
                     .clickable(actionStartActivity(openApp)),
                 verticalAlignment = Alignment.Vertical.CenterVertically
             ) {
-                Text("다온이 선물매매 v2.2", style = TextStyle(color = darkText, fontWeight = FontWeight.Bold, fontSize = 15.sp))
-                Text("$sym  ${when (side) { "LONG" -> "🟢 LONG"; "SHORT" -> "🔴 SHORT"; else -> "⚪ 대기" }}", modifier = GlanceModifier.padding(top = 4.dp), style = TextStyle(color = darkText, fontWeight = FontWeight.Bold))
-                Text("현재가 $price", modifier = GlanceModifier.padding(top = 5.dp), style = TextStyle(color = darkText, fontWeight = FontWeight.Bold))
+                Row(modifier = GlanceModifier.fillMaxWidth()) {
+                    Text("다온이 선물매매", style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 14.sp))
+                    Text("  v2.4", style = TextStyle(color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                }
+                Text("$sym  ${when (side) { "LONG" -> "▲ LONG"; "SHORT" -> "▼ SHORT"; else -> "● 대기" }}",
+                    modifier = GlanceModifier.padding(top = 5.dp),
+                    style = TextStyle(color = when (side) { "LONG" -> green; "SHORT" -> red; else -> white }, fontWeight = FontWeight.Bold, fontSize = 14.sp))
+                Text("현재가  $price", modifier = GlanceModifier.padding(top = 5.dp), style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 16.sp))
                 if (side == "WAIT") {
-                    Text("설정 SL $settingSl · TP $settingTp", modifier = GlanceModifier.padding(top = 2.dp), style = TextStyle(color = darkText))
+                    Text("설정  SL $settingSl · TP $settingTp", modifier = GlanceModifier.padding(top = 3.dp), style = TextStyle(color = white, fontSize = 11.sp))
                 } else {
-                    Row(modifier = GlanceModifier.padding(top = 2.dp)) {
-                        Text("SL $signalSl", modifier = GlanceModifier.padding(end = 9.dp), style = TextStyle(color = darkText))
-                        Text("TP $signalTp", style = TextStyle(color = darkText))
+                    Row(modifier = GlanceModifier.padding(top = 3.dp)) {
+                        Text("SL $signalSl", modifier = GlanceModifier.padding(end = 10.dp), style = TextStyle(color = red, fontSize = 11.sp))
+                        Text("TP $signalTp", style = TextStyle(color = green, fontSize = 11.sp))
                     }
                 }
                 Text("RSI $rsi · $updated", modifier = GlanceModifier.padding(top = 5.dp), style = TextStyle(color = muted, fontSize = 10.sp))
