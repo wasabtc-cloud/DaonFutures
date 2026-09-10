@@ -2,7 +2,7 @@ import io,zipfile,urllib.request
 from datetime import date,timedelta
 import pandas as pd
 import numpy as np
-START='2025-09-10';SYMBOLS=['BTCUSDT','ETHUSDT'];INTERVAL='5m';SL_PCT=.01;TP_PCT=.015;FEE_RATE=.0005
+START='2025-09-10';SYMBOLS=['BTCUSDT','ETHUSDT'];INTERVAL='15m';SL_PCT=.01;TP_PCT=.015;FEE_RATE=.0005
 
 def rz(url):
  try:
@@ -52,8 +52,8 @@ def donchian(d):
 def bosfvg(d):
  hi=d.high.shift().rolling(20).max();lo=d.low.shift().rolling(20).min();bu=d.close>hi;bd=d.close<lo;bf=d.low>d.high.shift(2);sf=d.high<d.low.shift(2);sig=np.zeros(len(d),int);p=None;ex=-1
  for i in range(2,len(d)):
-  if bu.iloc[i] and bf.iloc[i]:p=('L',d.high.iloc[i-2],d.low.iloc[i]);ex=i+36
-  elif bd.iloc[i] and sf.iloc[i]:p=('S',d.high.iloc[i],d.low.iloc[i-2]);ex=i+36
+  if bu.iloc[i] and bf.iloc[i]:p=('L',d.high.iloc[i-2],d.low.iloc[i]);ex=i+12
+  elif bd.iloc[i] and sf.iloc[i]:p=('S',d.high.iloc[i],d.low.iloc[i-2]);ex=i+12
   if p and i<=ex:
    s,l,h=p
    if d.low.iloc[i]<=h and d.high.iloc[i]>=l:
@@ -62,10 +62,10 @@ def bosfvg(d):
   elif i>ex:p=None
  return pd.Series(sig,index=d.index)
 def retest(d):
- hi=d.high.shift().rolling(24).max();lo=d.low.shift().rolling(24).min();sig=np.zeros(len(d),int);p=None;ex=-1
- for i in range(25,len(d)):
-  if d.close.iloc[i]>hi.iloc[i]:p=('L',hi.iloc[i]);ex=i+24
-  elif d.close.iloc[i]<lo.iloc[i]:p=('S',lo.iloc[i]);ex=i+24
+ hi=d.high.shift().rolling(8).max();lo=d.low.shift().rolling(8).min();sig=np.zeros(len(d),int);p=None;ex=-1
+ for i in range(9,len(d)):
+  if d.close.iloc[i]>hi.iloc[i]:p=('L',hi.iloc[i]);ex=i+8
+  elif d.close.iloc[i]<lo.iloc[i]:p=('S',lo.iloc[i]);ex=i+8
   if p and i<=ex:
    s,z=p
    if s=='L' and d.low.iloc[i]<=z*1.001 and d.close.iloc[i]>z:sig[i]=1;p=None
@@ -76,8 +76,7 @@ def macd_only(d):
  up=(d.macd>d.macds)&(d.macd.shift()<=d.macds.shift());dn=(d.macd<d.macds)&(d.macd.shift()>=d.macds.shift());return pd.Series(np.where(up,1,np.where(dn,-1,0)),index=d.index)
 def supertrend_macd(d):
  up=(d.macd>d.macds)&(d.macd.shift()<=d.macds.shift());dn=(d.macd<d.macds)&(d.macd.shift()>=d.macds.shift());v=d.volume>d.vma;lo=(d.h1st==1)&up&v&d.rsi.between(50,70);sh=(d.h1st==-1)&dn&v&d.rsi.between(30,50);return pd.Series(np.where(lo,1,np.where(sh,-1,0)),index=d.index)
-def gate(d,s):
- return pd.Series(np.where((s==1)&(d.close>d.h4e200),1,np.where((s==-1)&(d.close<d.h4e200),-1,0)),index=d.index)
+def gate(d,s):return pd.Series(np.where((s==1)&(d.close>d.h4e200),1,np.where((s==-1)&(d.close<d.h4e200),-1,0)),index=d.index)
 def run(d,s):
  bal=100.;peak=100.;mdd=0.;tr=[];i=0
  while i<len(d)-1:
@@ -91,7 +90,6 @@ def run(d,s):
   if j>=len(d):break
   before=bal;bal+=bal*((x/e-1)*side-2*FEE_RATE);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);tr.append((before,bal,o));i=j+1
  n=len(tr);w=sum(x[2]=='TP' for x in tr);gp=sum(max(0,x[1]-x[0]) for x in tr);gl=-sum(min(0,x[1]-x[0]) for x in tr);return bal,n,100*w/n if n else 0,gp/gl if gl else 999,100*mdd
-
 def main():
  ss=[('Current app',current),('Supertrend',supertrend),('ADX Donchian',donchian),('BOS FVG',bosfvg),('Breakout Retest',retest),('MACD only',macd_only),('Supertrend + MACD',supertrend_macd)];rows=[]
  for sym in SYMBOLS:
