@@ -4,8 +4,26 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-android { namespace = "com.daon.futures"; compileSdk = 35
-    defaultConfig { applicationId = "com.daon.futures"; minSdk = 26; targetSdk = 35; versionCode = 20; versionName = "2.0" }
+android {
+    namespace = "com.daon.futures"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.daon.futures"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 20
+        versionName = "2.0"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
