@@ -1,0 +1,28 @@
+name: Backtest 1Y
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/**'
+      - '.github/workflows/backtest-1y.yml'
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy matplotlib
+      - name: Run backtest
+        run: python backtest/backtest_1y.py
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-backtest-1y
+          path: |
+            backtest_equity.png
+            backtest_results.csv
