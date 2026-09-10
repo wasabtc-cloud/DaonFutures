@@ -31,8 +31,6 @@ def rsi(s,n=14):
  d=s.diff();up=d.clip(lower=0);dn=-d.clip(upper=0);ag=up.ewm(alpha=1/n,adjust=False).mean();al=dn.ewm(alpha=1/n,adjust=False).mean();return (100-100/(1+ag/al.replace(0,np.nan))).fillna(100)
 def atr(d,n=14):
  pc=d.close.shift(1);tr=pd.concat([d.high-d.low,(d.high-pc).abs(),(d.low-pc).abs()],axis=1).max(axis=1);return tr.ewm(alpha=1/n,adjust=False).mean()
-def adx(d,n=14):
- up=d.high.diff();dn=-d.low.diff();plus=pd.Series(np.where((up>dn)&(up>0),up,0.),index=d.index);minus=pd.Series(np.where((dn>up)&(dn>0),dn,0.),index=d.index);a=atr(d,n);p=100*plus.ewm(alpha=1/n,adjust=False).mean()/a;m=100*minus.ewm(alpha=1/n,adjust=False).mean()/a;dx=100*(p-m).abs()/(p+m).replace(0,np.nan);return dx.ewm(alpha=1/n,adjust=False).mean(),p,m
 def supertrend(d,n=10,mult=3.):
  a=atr(d,n);hl=(d.high+d.low)/2;ub=hl+mult*a;lb=hl-mult*a;fu=ub.copy();fl=lb.copy();t=pd.Series(1,index=d.index,dtype=int)
  for i in range(1,len(d)):
@@ -40,19 +38,32 @@ def supertrend(d,n=10,mult=3.):
   t.iloc[i]=1 if d.close.iloc[i]>fu.iloc[i-1] else (-1 if d.close.iloc[i]<fl.iloc[i-1] else t.iloc[i-1])
  return t
 def prep(d):
- d=d.copy();d['ema20']=ema(d.close,20);d['ema50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma20']=d.volume.rolling(20).mean();d['dc_hi']=d.high.shift(1).rolling(20).max();d['dc_lo']=d.low.shift(1).rolling(20).min()
- h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h1['ema20']=ema(h1.close,20);h1['ema50']=ema(h1.close,50);h1['st']=supertrend(h1);h1['adx'],h1['pdi'],h1['mdi']=adx(h1);h4['ema20']=ema(h4.close,20);h4['ema50']=ema(h4.close,50);h4['ema200']=ema(h4.close,200)
- d=d.join(h1[['ema20','ema50','st','adx','pdi','mdi']].rename(columns={'ema20':'h1e20','ema50':'h1e50','st':'h1st','adx':'h1adx','pdi':'h1pdi','mdi':'h1mdi'}),how='left').ffill();d=d.join(h4[['ema20','ema50','ema200']].rename(columns={'ema20':'h4e20','ema50':'h4e50','ema200':'h4e200'}),how='left').ffill();return d
+ d=d.copy();d['ema20']=ema(d.close,20);d['ema50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma20']=d.volume.rolling(20).mean();h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h1['ema20']=ema(h1.close,20);h1['ema50']=ema(h1.close,50);h1['st']=supertrend(h1);h4['ema20']=ema(h4.close,20);h4['ema50']=ema(h4.close,50);h4['ema200']=ema(h4.close,200)
+ d=d.join(h1[['ema20','ema50','st']].rename(columns={'ema20':'h1e20','ema50':'h1e50','st':'h1st'}),how='left').ffill();d=d.join(h4[['ema20','ema50','ema200']].rename(columns={'ema20':'h4e20','ema50':'h4e50','ema200':'h4e200'}),how='left').ffill();return d
 def current(d):
  pe=d.ema20.shift(1);lo=(d.low.shift(1)<=pe)&(d.close>d.ema20);sh=(d.high.shift(1)>=pe)&(d.close<d.ema20);return pd.Series(np.where((d.h4e20>d.h4e50)&(d.h1e20>d.h1e50)&lo&(d.rsi>=50),1,np.where((d.h4e20<d.h4e50)&(d.h1e20<d.h1e50)&sh&(d.rsi<=50),-1,0)),index=d.index)
 def recommended(d):
  cu=(d.close>d.ema20)&(d.close.shift(1)<=d.ema20.shift(1));cd=(d.close<d.ema20)&(d.close.shift(1)>=d.ema20.shift(1));v=d.volume>d.vma20;lo=(d.ema20>d.ema50)&(d.close>d.h4e200)&(d.h1st==1)&cu&v&(d.rsi.between(50,70));sh=(d.ema20<d.ema50)&(d.close<d.h4e200)&(d.h1st==-1)&cd&v&(d.rsi.between(30,50));return pd.Series(np.where(lo,1,np.where(sh,-1,0)),index=d.index)
-def donchian_adx(d):
- v=d.volume>d.vma20;lo=(d.close>d.h4e200)&(d.h1adx>=25)&(d.h1pdi>d.h1mdi)&(d.close>d.dc_hi)&v;sh=(d.close<d.h4e200)&(d.h1adx>=25)&(d.h1mdi>d.h1pdi)&(d.close<d.dc_lo)&v;return pd.Series(np.where(lo,1,np.where(sh,-1,0)),index=d.index)
+def bos_fvg(d):
+ swing_hi=d.high.shift(1).rolling(20).max();swing_lo=d.low.shift(1).rolling(20).min();bos_up=d.close>swing_hi;bos_dn=d.close<swing_lo
+ bull_fvg=d.low>d.high.shift(2);bear_fvg=d.high<d.low.shift(2)
+ bull_low=d.high.shift(2);bull_high=d.low;bear_low=d.high;bear_high=d.low.shift(2)
+ sig=np.zeros(len(d),dtype=int);pending=None;expiry=-1
+ for i in range(2,len(d)):
+  if bos_up.iloc[i] and bull_fvg.iloc[i] and d.close.iloc[i]>d.h4e200.iloc[i]: pending=('L',bull_low.iloc[i],bull_high.iloc[i]);expiry=i+12
+  elif bos_dn.iloc[i] and bear_fvg.iloc[i] and d.close.iloc[i]<d.h4e200.iloc[i]: pending=('S',bear_low.iloc[i],bear_high.iloc[i]);expiry=i+12
+  if pending is not None and i<=expiry:
+   side,lo,hi=pending
+   touched=(d.low.iloc[i]<=hi and d.high.iloc[i]>=lo)
+   if touched:
+    if side=='L' and d.close.iloc[i]>lo: sig[i]=1;pending=None
+    elif side=='S' and d.close.iloc[i]<hi: sig[i]=-1;pending=None
+  elif i>expiry: pending=None
+ return pd.Series(sig,index=d.index)
 def run(d,s):
  bal=100.;peak=bal;mdd=0.;ts=[];eq=[(d.index[0],bal)];i=0
  while i<len(d)-1:
-  side=int(s.iloc[i]);
+  side=int(s.iloc[i])
   if side==0:i+=1;continue
   e=d.close.iloc[i];sl=e*(1-SL_PCT) if side==1 else e*(1+SL_PCT);tp=e*(1+TP_PCT) if side==1 else e*(1-TP_PCT);j=i+1;o=None
   while j<len(d):
@@ -64,7 +75,7 @@ def run(d,s):
   before=bal;bal+=bal*((x/e-1)*side-2*FEE_RATE);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);ts.append((before,bal,o));eq.append((d.index[j],bal));i=j+1
  n=len(ts);w=sum(t[2]=='TP' for t in ts);gp=sum(max(0,t[1]-t[0]) for t in ts);gl=-sum(min(0,t[1]-t[0]) for t in ts);return {'final':bal,'ret':bal-100,'n':n,'wr':100*w/n if n else 0,'pf':gp/gl if gl else 999,'mdd':100*mdd,'eq':eq}
 def main():
- rows=[];fig,axes=plt.subplots(2,1,figsize=(12,12));strategies=[('Current app',current),('Supertrend filter',recommended),('ADX Donchian',donchian_adx)]
+ rows=[];fig,axes=plt.subplots(2,1,figsize=(12,12));strategies=[('Current app',current),('Supertrend filter',recommended),('BOS FVG',bos_fvg)]
  for ax,sym in zip(axes,SYMBOLS):
   print('Downloading',sym,flush=True);d=prep(get_klines(sym));d=d.loc[d.index>=pd.Timestamp(START,tz='UTC')+pd.Timedelta(days=35)]
   for name,fn in strategies:
