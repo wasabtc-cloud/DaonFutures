@@ -18,29 +18,70 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.daon.futures.MainActivity
+import java.util.Locale
 
-class DaonWidget:GlanceAppWidget(){
-    override suspend fun provideGlance(context:Context,id:androidx.glance.GlanceId){
-        provideContent{
-            val p=context.getSharedPreferences("settings",0)
-            val sym=p.getString("last_symbol",p.getString("symbol","BTCUSDT"))?:"BTCUSDT"
-            val side=p.getString("last_side","WAIT")?:"WAIT"
-            val price=p.getString("last_price","-")?:"-"
-            val sl=p.getString("last_sl","-")?:"-"
-            val tp=p.getString("last_tp","-")?:"-"
-            val rsi=p.getString("last_rsi","-")?:"-"
-            val updated=p.getString("last_updated","앱에서 분석 필요")?:"앱에서 분석 필요"
-            val openApp=Intent(context,MainActivity::class.java)
-            val white=ColorProvider(Color.White,Color.White)
-            val muted=ColorProvider(Color(0xFFB8BECC),Color(0xFFB8BECC))
-            Column(GlanceModifier.fillMaxSize().background(ColorProvider(Color(0xFF171A21),Color(0xFF171A21))).padding(14.dp).clickable(actionStartActivity(openApp)),verticalAlignment=Alignment.Vertical.CenterVertically){
-                Text("다온이 선물매매",style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=15.sp))
-                Text("$sym  ${when(side){"LONG"->"🟢 LONG";"SHORT"->"🔴 SHORT";else->"⚪ 대기"}}",modifier=GlanceModifier.padding(top=4.dp),style=TextStyle(color=white,fontWeight=FontWeight.Bold))
-                Text("현재가 $price",modifier=GlanceModifier.padding(top=5.dp),style=TextStyle(color=white))
-                Row(modifier=GlanceModifier.padding(top=2.dp)){Text("SL $sl",modifier=GlanceModifier.padding(end=9.dp),style=TextStyle(color=white));Text("TP $tp",style=TextStyle(color=white))}
-                Text("RSI $rsi · $updated",modifier=GlanceModifier.padding(top=5.dp),style=TextStyle(color=muted,fontSize=10.sp))
+class DaonWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: androidx.glance.GlanceId) {
+        provideContent {
+            val p = context.getSharedPreferences("settings", 0)
+            val sym = p.getString("last_symbol", p.getString("symbol", "BTCUSDT")) ?: "BTCUSDT"
+            val side = p.getString("last_side", "WAIT") ?: "WAIT"
+            val price = p.getString("last_price", "-") ?: "-"
+            val signalSl = p.getString("last_sl", "-") ?: "-"
+            val signalTp = p.getString("last_tp", "-") ?: "-"
+            val rsi = p.getString("last_rsi", "-") ?: "-"
+            val updated = p.getString("last_updated", "앱에서 분석 필요") ?: "앱에서 분석 필요"
+            val settingSl = String.format(Locale.KOREA, "%.1f%%", p.getFloat("sl", 1f))
+            val settingTp = String.format(Locale.KOREA, "%.1f%%", p.getFloat("tp", 1.5f))
+            val openApp = Intent(context, MainActivity::class.java)
+
+            val white = ColorProvider(Color(0xFFFFFFFF), Color(0xFFFFFFFF))
+            val muted = ColorProvider(Color(0xFFD0D5E0), Color(0xFFD0D5E0))
+            val bg = ColorProvider(Color(0xFF171A21), Color(0xFF171A21))
+
+            Column(
+                GlanceModifier.fillMaxSize()
+                    .background(bg)
+                    .padding(14.dp)
+                    .clickable(actionStartActivity(openApp)),
+                verticalAlignment = Alignment.Vertical.CenterVertically
+            ) {
+                Text(
+                    "다온이 선물매매 v2.1",
+                    style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                )
+                Text(
+                    "$sym  ${when (side) { "LONG" -> "🟢 LONG"; "SHORT" -> "🔴 SHORT"; else -> "⚪ 대기" }}",
+                    modifier = GlanceModifier.padding(top = 4.dp),
+                    style = TextStyle(color = white, fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    "현재가 $price",
+                    modifier = GlanceModifier.padding(top = 5.dp),
+                    style = TextStyle(color = white)
+                )
+                if (side == "WAIT") {
+                    Text(
+                        "설정 SL $settingSl · TP $settingTp",
+                        modifier = GlanceModifier.padding(top = 2.dp),
+                        style = TextStyle(color = white)
+                    )
+                } else {
+                    Row(modifier = GlanceModifier.padding(top = 2.dp)) {
+                        Text("SL $signalSl", modifier = GlanceModifier.padding(end = 9.dp), style = TextStyle(color = white))
+                        Text("TP $signalTp", style = TextStyle(color = white))
+                    }
+                }
+                Text(
+                    "RSI $rsi · $updated",
+                    modifier = GlanceModifier.padding(top = 5.dp),
+                    style = TextStyle(color = muted, fontSize = 10.sp)
+                )
             }
         }
     }
 }
-class DaonWidgetReceiver:GlanceAppWidgetReceiver(){override val glanceAppWidget:GlanceAppWidget=DaonWidget()}
+
+class DaonWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = DaonWidget()
+}
