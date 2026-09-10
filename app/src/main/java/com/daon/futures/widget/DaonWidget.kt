@@ -31,26 +31,16 @@ class DaonWidget:GlanceAppWidget(){
             val rsi=p.getString("last_rsi","-")?:"-"
             val updated=p.getString("last_updated","앱에서 분석 필요")?:"앱에서 분석 필요"
             val openApp=Intent(context,MainActivity::class.java)
-            Column(
-                GlanceModifier.fillMaxSize()
-                    .background(ColorProvider(Color(0xFF171A21), Color(0xFF171A21)))
-                    .padding(14.dp)
-                    .clickable(actionStartActivity(openApp)),
-                verticalAlignment=Alignment.Vertical.CenterVertically
-            ){
-                Text("다온이 선물매매",style=TextStyle(fontWeight=FontWeight.Bold,fontSize=15.sp))
-                Text("$sym  ${when(side){"LONG"->"🟢 LONG";"SHORT"->"🔴 SHORT";else->"⚪ 대기"}}",modifier=GlanceModifier.padding(top=4.dp))
-                Text("진입 $price",modifier=GlanceModifier.padding(top=5.dp))
-                Row(modifier=GlanceModifier.padding(top=2.dp)){
-                    Text("SL $sl",modifier=GlanceModifier.padding(end=9.dp))
-                    Text("TP $tp")
-                }
-                Text("RSI $rsi · $updated",modifier=GlanceModifier.padding(top=5.dp),style=TextStyle(fontSize=10.sp))
+            val white=ColorProvider(Color.White,Color.White)
+            val muted=ColorProvider(Color(0xFFB8BECC),Color(0xFFB8BECC))
+            Column(GlanceModifier.fillMaxSize().background(ColorProvider(Color(0xFF171A21),Color(0xFF171A21))).padding(14.dp).clickable(actionStartActivity(openApp)),verticalAlignment=Alignment.Vertical.CenterVertically){
+                Text("다온이 선물매매",style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=15.sp))
+                Text("$sym  ${when(side){"LONG"->"🟢 LONG";"SHORT"->"🔴 SHORT";else->"⚪ 대기"}}",modifier=GlanceModifier.padding(top=4.dp),style=TextStyle(color=white,fontWeight=FontWeight.Bold))
+                Text("현재가 $price",modifier=GlanceModifier.padding(top=5.dp),style=TextStyle(color=white))
+                Row(modifier=GlanceModifier.padding(top=2.dp)){Text("SL $sl",modifier=GlanceModifier.padding(end=9.dp),style=TextStyle(color=white));Text("TP $tp",style=TextStyle(color=white))}
+                Text("RSI $rsi · $updated",modifier=GlanceModifier.padding(top=5.dp),style=TextStyle(color=muted,fontSize=10.sp))
             }
         }
     }
 }
-
-class DaonWidgetReceiver:GlanceAppWidgetReceiver(){
-    override val glanceAppWidget:GlanceAppWidget=DaonWidget()
-}
+class DaonWidgetReceiver:GlanceAppWidgetReceiver(){override val glanceAppWidget:GlanceAppWidget=DaonWidget()}
