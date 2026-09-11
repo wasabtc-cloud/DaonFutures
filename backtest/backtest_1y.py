@@ -40,14 +40,18 @@ def st(d,n=10,k=3):
 def adx(d,n=14):
  u=d.high.diff();dn=-d.low.diff();p=pd.Series(np.where((u>dn)&(u>0),u,0.),index=d.index);m=pd.Series(np.where((dn>u)&(dn>0),dn,0.),index=d.index);a=atr(d,n);pi=100*p.ewm(alpha=1/n,adjust=False).mean()/a;mi=100*m.ewm(alpha=1/n,adjust=False).mean()/a;dx=100*(pi-mi).abs()/(pi+mi).replace(0,np.nan);return dx.ewm(alpha=1/n,adjust=False).mean()
 def prep(d):
- d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean()
+ d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean();d['atrp']=atr(d)/d.close;d['emagap']=(d.e20-d.e50).abs()/d.close
  h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
  h1['st']=st(h1);h1['adx']=adx(h1);h4['e200']=ema(h4.close,200);h4['slope6']=(h4.e200-h4.e200.shift(6))/h4.e200.shift(6)
  return d.join(h1[['st','adx']].rename(columns={'st':'h1st','adx':'h1adx'})).ffill().join(h4[['e200','slope6']].rename(columns={'e200':'h4e200','slope6':'h4slope'})).ffill()
-def signals(d):
+def signals(d,sideways=False):
  cu=(d.close>d.e20)&(d.close.shift()<=d.e20.shift());cd=(d.close<d.e20)&(d.close.shift()>=d.e20.shift());vr=d.volume/d.vma
  L=(d.e20>d.e50)&(d.h1st==1)&cu&d.rsi.between(50,70)&(d.close>d.h4e200)&(vr>=1.2)&(d.h1adx>=25)&(d.h4slope>=.001)
  S=(d.e20<d.e50)&(d.h1st==-1)&cd&d.rsi.between(30,50)&(d.close<d.h4e200)&(vr>=1.0)&(d.h1adx>=30)&(d.h4slope<=0)
+ if sideways:
+  # Avoid flat/low-volatility regimes: stronger ADX, meaningful 4H EMA200 slope, separated 20/50 EMA, enough ATR.
+  L=L&(d.h1adx>=25)&(d.h4slope>=.001)&(d.emagap>=.002)&(d.atrp>=.003)
+  S=S&(d.h1adx>=30)&(d.h4slope<=-.001)&(d.emagap>=.002)&(d.atrp>=.003)
  return pd.Series(np.where(L,1,np.where(S,-1,0)),index=d.index)
 def run(d,s,mode):
  if mode=='LONG':s=s.where(s==1,0)
@@ -68,11 +72,13 @@ def main():
  rows=[];years=[('Y1','2023-09-10','2024-09-10'),('Y2','2024-09-10','2025-09-10'),('Y3','2025-09-10','2026-09-10')]
  for itv in INTERVALS:
   for sym in SYMBOLS:
-   print('Downloading',sym,itv,flush=True);d=prep(get(sym,itv));d=d.loc[(d.index>=START)&(d.index<END)];s=signals(d)
-   for mode in ['LONG','SHORT','BOTH']:
-    f=run(d,s,mode);ys=[]
-    for _,a,b in years:
-     dd=d.loc[(d.index>=pd.Timestamp(a,tz='UTC'))&(d.index<pd.Timestamp(b,tz='UTC'))];ys.append(run(dd,s.loc[dd.index],mode)[0])
-    rows.append([sym,itv,mode,round(f[0],2),round(f[0]-100,2),f[1],round(f[2],2),round(f[3],2),round(f[4],2),*[round(x,2) for x in ys]])
- out=pd.DataFrame(rows,columns=['Symbol','TF','Mode','Final3Y','Return3Y_pct','Trades','WinRate_pct','PF','MDD_pct','Y1_Final','Y2_Final','Y3_Final']);out=out.sort_values('Final3Y',ascending=False);print(out.to_string(index=False),flush=True);out.to_csv('backtest_results.csv',index=False)
+   print('Downloading',sym,itv,flush=True);d=prep(get(sym,itv));d=d.loc[(d.index>=START)&(d.index<END)]
+   for filt in ['BASE','SIDEWAYS_FILTER']:
+    s=signals(d,filt=='SIDEWAYS_FILTER')
+    for mode in ['LONG','SHORT','BOTH']:
+     f=run(d,s,mode);ys=[]
+     for _,a,b in years:
+      dd=d.loc[(d.index>=pd.Timestamp(a,tz='UTC'))&(d.index<pd.Timestamp(b,tz='UTC'))];ys.append(run(dd,s.loc[dd.index],mode)[0])
+     rows.append([sym,itv,filt,mode,round(f[0],2),round(f[0]-100,2),f[1],round(f[2],2),round(f[3],2),round(f[4],2),*[round(x,2) for x in ys]])
+ out=pd.DataFrame(rows,columns=['Symbol','TF','Filter','Mode','Final3Y','Return3Y_pct','Trades','WinRate_pct','PF','MDD_pct','Y1_Final','Y2_Final','Y3_Final']);out=out.sort_values('Final3Y',ascending=False);print(out.to_string(index=False),flush=True);out.to_csv('backtest_results.csv',index=False)
 if __name__=='__main__':main()
