@@ -1,24 +1,24 @@
-import io,zipfile,urllib.request,itertools
+import io,zipfile,urllib.request
 from datetime import date,timedelta
 import pandas as pd
 import numpy as np
-SYMBOL='ETHUSDT';INTERVAL='15m';FEE=.0005;SL=.01;TP=.02;LEV=3
+SYMBOLS=['BTCUSDT','ETHUSDT'];INTERVALS=['5m','15m'];FEE=.0005;SL=.01;TP=.02;LEV=3
 START=pd.Timestamp('2023-09-10',tz='UTC');END=pd.Timestamp('2026-09-10',tz='UTC')
 def rz(url):
  try:
   with urllib.request.urlopen(url,timeout=60) as r:raw=r.read()
   with zipfile.ZipFile(io.BytesIO(raw)) as z:return pd.read_csv(z.open(z.namelist()[0]),header=None)
  except Exception:return pd.DataFrame()
-def get(sym):
+def get(sym,itv):
  p=[];y,m=2023,8
  while (y,m)<=(2026,8):
-  x=rz(f'https://data.binance.vision/data/futures/um/monthly/klines/{sym}/{INTERVAL}/{sym}-{INTERVAL}-{y}-{m:02d}.zip')
+  x=rz(f'https://data.binance.vision/data/futures/um/monthly/klines/{sym}/{itv}/{sym}-{itv}-{y}-{m:02d}.zip')
   if not x.empty:p.append(x)
   m+=1
   if m==13:y+=1;m=1
  d=date(2026,9,1)
  while d<date(2026,9,10):
-  x=rz(f'https://data.binance.vision/data/futures/um/daily/klines/{sym}/{INTERVAL}/{sym}-{INTERVAL}-{d.isoformat()}.zip')
+  x=rz(f'https://data.binance.vision/data/futures/um/daily/klines/{sym}/{itv}/{sym}-{itv}-{d.isoformat()}.zip')
   if not x.empty:p.append(x)
   d+=timedelta(days=1)
  r=pd.concat(p).iloc[:,:12];r.columns=['time','open','high','low','close','volume','ct','qv','tr','tb','tq','ig']
@@ -40,23 +40,21 @@ def st(d,n=10,k=3):
 def adx(d,n=14):
  u=d.high.diff();dn=-d.low.diff();p=pd.Series(np.where((u>dn)&(u>0),u,0.),index=d.index);m=pd.Series(np.where((dn>u)&(dn>0),dn,0.),index=d.index);a=atr(d,n);pi=100*p.ewm(alpha=1/n,adjust=False).mean()/a;mi=100*m.ewm(alpha=1/n,adjust=False).mean()/a;dx=100*(pi-mi).abs()/(pi+mi).replace(0,np.nan);return dx.ewm(alpha=1/n,adjust=False).mean()
 def prep(d):
- d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean();d['atr']=atr(d);d['atrp']=d['atr']/d.close
- h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h1['st']=st(h1);h1['adx']=adx(h1);h4['e200']=ema(h4.close,200);h4['slope6']=(h4.e200-h4.e200.shift(6))/h4.e200.shift(6);h4['e50']=ema(h4.close,50)
- return d.join(h1[['st','adx']].rename(columns={'st':'h1st','adx':'h1adx'})).ffill().join(h4[['e200','e50','slope6']].rename(columns={'e200':'h4e200','e50':'h4e50','slope6':'h4slope'})).ffill()
-def bases(d):
- cu=(d.close>d.e20)&(d.close.shift()<=d.e20.shift());cd=(d.close<d.e20)&(d.close.shift()>=d.e20.shift());
- L=(d.e20>d.e50)&(d.h1st==1)&cu&d.rsi.between(50,70)&(d.close>d.h4e200)
- S=(d.e20<d.e50)&(d.h1st==-1)&cd&d.rsi.between(30,50)&(d.close<d.h4e200)
- return L,S
-def sig(d,lv,ladx,lslope,sadx,sslope,atrmin):
- L,S=bases(d);vr=d.volume/d.vma
- long=L&(vr>=lv)&(d.h1adx>=ladx)&(d.h4slope>=lslope)&(d.atrp>=atrmin)
- short=S&(vr>=1.0)&(d.h1adx>=sadx)&(d.h4slope<=-sslope)&(d.atrp>=atrmin)
- return pd.Series(np.where(long,1,np.where(short,-1,0)),index=d.index)
-def run(d,s):
- bal=100.;peak=100.;mdd=0.;n=w=0;i=0
+ d=d.copy();d['e20']=ema(d.close,20);d['e50']=ema(d.close,50);d['rsi']=rsi(d.close);d['vma']=d.volume.rolling(20).mean()
+ h1=d.resample('1h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna();h4=d.resample('4h',label='right',closed='right').agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'}).dropna()
+ h1['st']=st(h1);h1['adx']=adx(h1);h4['e200']=ema(h4.close,200);h4['slope6']=(h4.e200-h4.e200.shift(6))/h4.e200.shift(6)
+ return d.join(h1[['st','adx']].rename(columns={'st':'h1st','adx':'h1adx'})).ffill().join(h4[['e200','slope6']].rename(columns={'e200':'h4e200','slope6':'h4slope'})).ffill()
+def signals(d):
+ cu=(d.close>d.e20)&(d.close.shift()<=d.e20.shift());cd=(d.close<d.e20)&(d.close.shift()>=d.e20.shift());vr=d.volume/d.vma
+ L=(d.e20>d.e50)&(d.h1st==1)&cu&d.rsi.between(50,70)&(d.close>d.h4e200)&(vr>=1.2)&(d.h1adx>=25)&(d.h4slope>=.001)
+ S=(d.e20<d.e50)&(d.h1st==-1)&cd&d.rsi.between(30,50)&(d.close<d.h4e200)&(vr>=1.0)&(d.h1adx>=30)&(d.h4slope<=0)
+ return pd.Series(np.where(L,1,np.where(S,-1,0)),index=d.index)
+def run(d,s,mode):
+ if mode=='LONG':s=s.where(s==1,0)
+ elif mode=='SHORT':s=s.where(s==-1,0)
+ bal=100.;peak=100.;mdd=0.;n=w=0;gp=gl=0.;i=0
  while i<len(d)-1 and bal>1:
-  side=int(s.iloc[i]);
+  side=int(s.iloc[i])
   if not side:i+=1;continue
   e=d.close.iloc[i];stop=e*(1-SL) if side==1 else e*(1+SL);take=e*(1+TP) if side==1 else e*(1-TP);j=i+1
   while j<len(d):
@@ -64,20 +62,17 @@ def run(d,s):
    if hs or ht:x=stop if hs else take;win=not hs;break
    j+=1
   if j>=len(d):break
-  r=((x/e-1)*side-2*FEE)*LEV;bal*=max(0,1+r);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);n+=1;w+=int(win);i=j+1
- return bal,n,100*w/n if n else 0,100*mdd
+  before=bal;r=((x/e-1)*side-2*FEE)*LEV;bal*=max(0,1+r);pnl=bal-before;gp+=max(0,pnl);gl+=max(0,-pnl);peak=max(peak,bal);mdd=max(mdd,(peak-bal)/peak);n+=1;w+=int(win);i=j+1
+ return bal,n,100*w/n if n else 0,(gp/gl if gl else 999),100*mdd
 def main():
- print('Downloading ETHUSDT',flush=True);d=prep(get(SYMBOL));d=d.loc[(d.index>=START)&(d.index<END)]
- periods=[('Y1','2023-09-10','2024-09-10'),('Y2','2024-09-10','2025-09-10'),('Y3','2025-09-10','2026-09-10')]
- rows=[]
- grid=itertools.product([1.0,1.1,1.2],[0,20,25],[0,.0005,.001],[20,25,30],[0,.0005,.001],[0,.0025,.004])
- for lv,ladx,lslope,sadx,sslope,atrmin in grid:
-  s=sig(d,lv,ladx,lslope,sadx,sslope,atrmin);year=[]
-  for _,a,b in periods:
-   dd=d.loc[(d.index>=pd.Timestamp(a,tz='UTC'))&(d.index<pd.Timestamp(b,tz='UTC'))];year.append(run(dd,s.loc[dd.index]))
-  full=run(d,s); finals=[x[0] for x in year]; score=min(finals)
-  robust=all(x>100 for x in finals) and full[3]<=35 and full[1]>=100
-  rows.append([lv,ladx,lslope,sadx,sslope,atrmin,round(full[0],2),round(full[0]-100,2),full[1],round(full[2],2),round(full[3],2),*[round(x[0],2) for x in year],*[round(x[3],2) for x in year],robust,round(score,2)])
- out=pd.DataFrame(rows,columns=['LongVol','LongADX','LongSlope','ShortADX','ShortSlope','ATRmin','Final3Y','Ret3Y','Trades','WinRate','MDD','Y1_Final','Y2_Final','Y3_Final','Y1_MDD','Y2_MDD','Y3_MDD','RobustAllYears','WorstYearFinal'])
- out=out.sort_values(['RobustAllYears','WorstYearFinal','Final3Y'],ascending=[False,False,False]);print(out.head(30).to_string(index=False),flush=True);out.to_csv('backtest_results.csv',index=False)
+ rows=[];years=[('Y1','2023-09-10','2024-09-10'),('Y2','2024-09-10','2025-09-10'),('Y3','2025-09-10','2026-09-10')]
+ for itv in INTERVALS:
+  for sym in SYMBOLS:
+   print('Downloading',sym,itv,flush=True);d=prep(get(sym,itv));d=d.loc[(d.index>=START)&(d.index<END)];s=signals(d)
+   for mode in ['LONG','SHORT','BOTH']:
+    f=run(d,s,mode);ys=[]
+    for _,a,b in years:
+     dd=d.loc[(d.index>=pd.Timestamp(a,tz='UTC'))&(d.index<pd.Timestamp(b,tz='UTC'))];ys.append(run(dd,s.loc[dd.index],mode)[0])
+    rows.append([sym,itv,mode,round(f[0],2),round(f[0]-100,2),f[1],round(f[2],2),round(f[3],2),round(f[4],2),*[round(x,2) for x in ys]])
+ out=pd.DataFrame(rows,columns=['Symbol','TF','Mode','Final3Y','Return3Y_pct','Trades','WinRate_pct','PF','MDD_pct','Y1_Final','Y2_Final','Y3_Final']);out=out.sort_values('Final3Y',ascending=False);print(out.to_string(index=False),flush=True);out.to_csv('backtest_results.csv',index=False)
 if __name__=='__main__':main()
