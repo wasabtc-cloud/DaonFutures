@@ -52,6 +52,53 @@ fun rsiValue(values: List<Double>, period: Int = 14): Double {
     return 100.0 - 100.0 / (1.0 + rs)
 }
 
+private data class OneCandleZone(
+    val index: Int,
+    val low: Double,
+    val high: Double,
+    val side: String,
+    val retested: Boolean,
+    val entry: Double,
+    val stop: Double,
+    val target2R: Double
+)
+
+private fun oneCandleZone(candles: List<Candle>, ema20: List<Double>, ema50: List<Double>): OneCandleZone? {
+    if (candles.size < 22 || ema20.isEmpty() || ema50.isEmpty()) return null
+    val bullish = ema20.last() > ema50.last()
+    val start = maxOf(0, candles.size - 21)
+    val end = candles.size - 1
+    val indexed = (start until end).map { it to candles[it] }
+    val key = if (bullish) {
+        indexed.filter { (_, c) -> c.close < c.open }.maxByOrNull { (_, c) -> c.high }
+    } else {
+        indexed.filter { (_, c) -> c.close > c.open }.minByOrNull { (_, c) -> c.low }
+    } ?: return null
+
+    val (idx, candle) = key
+    val low = minOf(candle.open, candle.close)
+    val high = maxOf(candle.open, candle.close)
+    val last = candles.last()
+    val retested = last.low <= high && last.high >= low
+    val entry = last.close
+    val stop = if (bullish) low else high
+    val risk = if (bullish) entry - stop else stop - entry
+    val target = if (risk > 0.0) {
+        if (bullish) entry + risk * 2.0 else entry - risk * 2.0
+    } else entry
+
+    return OneCandleZone(
+        index = idx,
+        low = low,
+        high = high,
+        side = if (bullish) "LONG" else "SHORT",
+        retested = retested,
+        entry = entry,
+        stop = stop,
+        target2R = target
+    )
+}
+
 @Composable
 fun MarketChartCard(
     symbol: String,
@@ -64,46 +111,50 @@ fun MarketChartCard(
     val ema20 = emaSeries(closes, 20)
     val ema50 = emaSeries(closes, 50)
     val rsi = rsiValue(closes)
+    val zone = oneCandleZone(visible, ema20, ema50)
 
     Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
         Column(
             Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "$symbol · $intervalLabel · BINANCE",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
+            Text("$symbol · $intervalLabel · BINANCE", fontWeight = FontWeight.Bold, fontSize = 18.sp)
 
             if (visible.size < 2) {
                 Text("차트 데이터를 불러오는 중입니다.", color = Color.Gray)
             } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("EMA20 ${fmtChart(ema20.lastOrNull())}", color = Color(0xFF35A7FF), fontSize = 13.sp)
                     Text("EMA50 ${fmtChart(ema50.lastOrNull())}", color = Color(0xFFFFA000), fontSize = 13.sp)
                     Text("RSI ${String.format(Locale.KOREA, "%.1f", rsi)}", color = Color(0xFFA875FF), fontSize = 13.sp)
                 }
 
-                CandlestickCanvas(visible, ema20, ema50)
+                zone?.let {
+                    val sideColor = if (it.side == "LONG") Color(0xFF21D58B) else Color(0xFFFF4058)
+                    val state = if (it.retested) "리테스트 감지" else "리테스트 대기"
+                    Text(
+                        "One Candle ${it.side} · 기준 ${fmtChart(it.low)} ~ ${fmtChart(it.high)} · $state",
+                        color = sideColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                } ?: Text("One Candle · 기준 캔들 탐색 중", color = Color.Gray, fontSize = 12.sp)
 
-                Text(
-                    "RSI 14  ${String.format(Locale.KOREA, "%.2f", rsi)}",
-                    color = Color(0xFFA875FF),
-                    fontSize = 13.sp
-                )
-                RsiCanvas(closes)
+                CandlestickCanvas(visible, ema20, ema50, zone)
 
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("▲ LONG 후보", color = Color(0xFF21D58B), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("▼ SHORT 후보", color = Color(0xFFFF4058), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                zone?.let {
+                    if (it.retested) {
+                        Text(
+                            "진입 후보 ${fmtChart(it.entry)} · SL ${fmtChart(it.stop)} · 2R ${fmtChart(it.target2R)}",
+                            color = if (it.side == "LONG") Color(0xFF21D58B) else Color(0xFFFF4058),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
+
+                Text("RSI 14  ${String.format(Locale.KOREA, "%.2f", rsi)}", color = Color(0xFFA875FF), fontSize = 13.sp)
+                RsiCanvas(closes)
             }
         }
     }
@@ -113,7 +164,8 @@ fun MarketChartCard(
 private fun CandlestickCanvas(
     candles: List<Candle>,
     ema20: List<Double>,
-    ema50: List<Double>
+    ema50: List<Double>,
+    zone: OneCandleZone?
 ) {
     val up = Color(0xFF18C98B)
     val down = Color(0xFFFF4058)
@@ -122,13 +174,13 @@ private fun CandlestickCanvas(
     val grid = Color(0xFF29313D)
 
     Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(330.dp)
-            .background(Color(0xFF090E16), RoundedCornerShape(12.dp))
+        Modifier.fillMaxWidth().height(330.dp).background(Color(0xFF090E16), RoundedCornerShape(12.dp))
     ) {
-        val maxPrice = candles.maxOf { it.high }
-        val minPrice = candles.minOf { it.low }
+        val extras = buildList {
+            zone?.let { add(it.low); add(it.high); if (it.retested) { add(it.stop); add(it.target2R) } }
+        }
+        val maxPrice = max(candles.maxOf { it.high }, extras.maxOrNull() ?: candles.maxOf { it.high })
+        val minPrice = min(candles.minOf { it.low }, extras.minOrNull() ?: candles.minOf { it.low })
         val rawRange = maxPrice - minPrice
         val range = if (rawRange <= 0.0) 1.0 else rawRange
         val pad = range * 0.12
@@ -140,34 +192,36 @@ private fun CandlestickCanvas(
 
         for (g in 1..5) {
             val gy = size.height * g / 6f
-            drawLine(
-                color = grid,
-                start = Offset(0f, gy),
-                end = Offset(size.width, gy),
-                strokeWidth = 1f
-            )
+            drawLine(grid, Offset(0f, gy), Offset(size.width, gy), 1f)
         }
 
         val step = size.width / candles.size
         val bodyWidth = max(2f, step * 0.58f)
+
+        zone?.let {
+            val zoneColor = if (it.side == "LONG") up else down
+            val left = (step * it.index).coerceAtLeast(0f)
+            val topY = min(y(it.high), y(it.low))
+            val bottomY = max(y(it.high), y(it.low))
+            drawRect(
+                color = zoneColor.copy(alpha = 0.20f),
+                topLeft = Offset(left, topY),
+                size = Size(size.width - left, max(3f, bottomY - topY))
+            )
+            drawLine(zoneColor, Offset(left, topY), Offset(size.width, topY), 2f)
+            drawLine(zoneColor, Offset(left, bottomY), Offset(size.width, bottomY), 2f)
+        }
 
         candles.forEachIndexed { i, candle ->
             val x = step * i + step / 2f
             val candleColor = if (candle.close >= candle.open) up else down
             val openY = y(candle.open)
             val closeY = y(candle.close)
-
-            drawLine(
-                color = candleColor,
-                start = Offset(x, y(candle.high)),
-                end = Offset(x, y(candle.low)),
-                strokeWidth = 1.4f
-            )
-
+            drawLine(candleColor, Offset(x, y(candle.high)), Offset(x, y(candle.low)), 1.4f)
             drawRect(
-                color = candleColor,
-                topLeft = Offset(x - bodyWidth / 2f, min(openY, closeY)),
-                size = Size(bodyWidth, max(2f, abs(closeY - openY)))
+                candleColor,
+                Offset(x - bodyWidth / 2f, min(openY, closeY)),
+                Size(bodyWidth, max(2f, abs(closeY - openY)))
             )
         }
 
@@ -178,49 +232,25 @@ private fun CandlestickCanvas(
                     val point = Offset(step * i + step / 2f, y(value))
                     if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
                 }
-                drawPath(path = path, color = color, style = Stroke(width = 2.5f))
+                drawPath(path, color, style = Stroke(width = 2.5f))
             }
         }
-
         drawEma(ema20, blue)
         drawEma(ema50, orange)
 
-        // EMA20/EMA50 교차 지점을 LONG/SHORT 후보로 표시합니다.
-        for (i in 1 until candles.size) {
-            val previousGap = ema20[i - 1] - ema50[i - 1]
-            val currentGap = ema20[i] - ema50[i]
-            val x = step * i + step / 2f
-
-            if (previousGap <= 0.0 && currentGap > 0.0) {
-                val markerY = (y(candles[i].low) + 18f).coerceAtMost(size.height - 10f)
-                drawCircle(color = up, radius = 8f, center = Offset(x, markerY))
-                drawLine(
-                    color = up,
-                    start = Offset(x, markerY - 18f),
-                    end = Offset(x, markerY - 4f),
-                    strokeWidth = 5f
-                )
-            }
-
-            if (previousGap >= 0.0 && currentGap < 0.0) {
-                val markerY = (y(candles[i].high) - 18f).coerceAtLeast(10f)
-                drawCircle(color = down, radius = 8f, center = Offset(x, markerY))
-                drawLine(
-                    color = down,
-                    start = Offset(x, markerY + 4f),
-                    end = Offset(x, markerY + 18f),
-                    strokeWidth = 5f
-                )
-            }
+        zone?.takeIf { it.retested }?.let {
+            val sideColor = if (it.side == "LONG") up else down
+            val entryY = y(it.entry)
+            val stopY = y(it.stop)
+            val tpY = y(it.target2R)
+            drawLine(sideColor, Offset(0f, entryY), Offset(size.width, entryY), 1.8f)
+            drawLine(down, Offset(0f, stopY), Offset(size.width, stopY), 2.2f)
+            drawLine(up, Offset(0f, tpY), Offset(size.width, tpY), 2.2f)
+            drawCircle(sideColor, radius = 8f, center = Offset(size.width - 12f, entryY))
         }
 
         val lastPriceY = y(candles.last().close)
-        drawLine(
-            color = up.copy(alpha = 0.7f),
-            start = Offset(0f, lastPriceY),
-            end = Offset(size.width, lastPriceY),
-            strokeWidth = 1.4f
-        )
+        drawLine(Color.White.copy(alpha = 0.35f), Offset(0f, lastPriceY), Offset(size.width, lastPriceY), 1.2f)
     }
 }
 
@@ -229,32 +259,12 @@ private fun RsiCanvas(closes: List<Double>) {
     val purple = Color(0xFF8E6CFF)
     val guide = Color(0xFF565B66)
     val series = mutableListOf<Double>()
+    for (i in closes.indices) series += if (i < 14) 50.0 else rsiValue(closes.take(i + 1), 14)
 
-    for (i in closes.indices) {
-        series += if (i < 14) 50.0 else rsiValue(closes.take(i + 1), 14)
-    }
-
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(100.dp)
-            .background(Color(0xFF090E16), RoundedCornerShape(10.dp))
-    ) {
+    Canvas(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF090E16), RoundedCornerShape(10.dp))) {
         fun y(value: Double): Float = ((100.0 - value) / 100.0 * size.height).toFloat()
-
-        drawLine(
-            color = guide,
-            start = Offset(0f, y(70.0)),
-            end = Offset(size.width, y(70.0)),
-            strokeWidth = 1f
-        )
-        drawLine(
-            color = guide,
-            start = Offset(0f, y(30.0)),
-            end = Offset(size.width, y(30.0)),
-            strokeWidth = 1f
-        )
-
+        drawLine(guide, Offset(0f, y(70.0)), Offset(size.width, y(70.0)), 1f)
+        drawLine(guide, Offset(0f, y(30.0)), Offset(size.width, y(30.0)), 1f)
         if (series.size > 1) {
             val step = size.width / series.size
             val path = Path()
@@ -262,10 +272,9 @@ private fun RsiCanvas(closes: List<Double>) {
                 val point = Offset(step * i + step / 2f, y(value))
                 if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }
-            drawPath(path = path, color = purple, style = Stroke(width = 2.4f))
+            drawPath(path, purple, style = Stroke(width = 2.4f))
         }
     }
 }
 
-private fun fmtChart(value: Double?): String =
-    if (value == null) "-" else String.format(Locale.KOREA, "%,.2f", value)
+private fun fmtChart(value: Double?): String = if (value == null) "-" else String.format(Locale.KOREA, "%,.2f", value)
