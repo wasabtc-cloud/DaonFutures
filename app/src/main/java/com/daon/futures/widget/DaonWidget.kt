@@ -20,57 +20,15 @@ import androidx.glance.text.TextStyle
 import com.daon.futures.MainActivity
 import java.util.Locale
 
-class DaonWidget : GlanceAppWidget() {
-    override suspend fun provideGlance(context: Context, id: androidx.glance.GlanceId) {
-        provideContent {
-            val p = context.getSharedPreferences("settings", 0)
-            val sym = p.getString("last_symbol", p.getString("symbol", "BTCUSDT")) ?: "BTCUSDT"
-            val side = p.getString("last_side", "WAIT") ?: "WAIT"
-            val price = p.getString("last_price", "-") ?: "-"
-            val signalSl = p.getString("last_sl", "-") ?: "-"
-            val signalTp = p.getString("last_tp", "-") ?: "-"
-            val rsi = p.getString("last_rsi", "-") ?: "-"
-            val updated = p.getString("last_updated", "앱에서 분석 필요") ?: "앱에서 분석 필요"
-            val settingSl = String.format(Locale.KOREA, "%.1f%%", p.getFloat("sl", 1f))
-            val settingTp = String.format(Locale.KOREA, "%.1f%%", p.getFloat("tp", 1.5f))
-            val openApp = Intent(context, MainActivity::class.java)
-
-            val white = ColorProvider(Color(0xFFF7F9FC), Color(0xFFF7F9FC))
-            val muted = ColorProvider(Color(0xFF9AA5B4), Color(0xFF9AA5B4))
-            val green = ColorProvider(Color(0xFF19D38A), Color(0xFF19D38A))
-            val red = ColorProvider(Color(0xFFFF4D63), Color(0xFFFF4D63))
-            val bg = ColorProvider(Color(0xFF0D1420), Color(0xFF0D1420))
-            val accent = ColorProvider(Color(0xFF8B7CFF), Color(0xFF8B7CFF))
-
-            Column(
-                GlanceModifier.fillMaxSize()
-                    .background(bg)
-                    .padding(14.dp)
-                    .clickable(actionStartActivity(openApp)),
-                verticalAlignment = Alignment.Vertical.CenterVertically
-            ) {
-                Row(modifier = GlanceModifier.fillMaxWidth()) {
-                    Text("다온이 선물매매", style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 14.sp))
-                    Text("  v2.4", style = TextStyle(color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp))
-                }
-                Text("$sym  ${when (side) { "LONG" -> "▲ LONG"; "SHORT" -> "▼ SHORT"; else -> "● 대기" }}",
-                    modifier = GlanceModifier.padding(top = 5.dp),
-                    style = TextStyle(color = when (side) { "LONG" -> green; "SHORT" -> red; else -> white }, fontWeight = FontWeight.Bold, fontSize = 14.sp))
-                Text("현재가  $price", modifier = GlanceModifier.padding(top = 5.dp), style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 16.sp))
-                if (side == "WAIT") {
-                    Text("설정  SL $settingSl · TP $settingTp", modifier = GlanceModifier.padding(top = 3.dp), style = TextStyle(color = white, fontSize = 11.sp))
-                } else {
-                    Row(modifier = GlanceModifier.padding(top = 3.dp)) {
-                        Text("SL $signalSl", modifier = GlanceModifier.padding(end = 10.dp), style = TextStyle(color = red, fontSize = 11.sp))
-                        Text("TP $signalTp", style = TextStyle(color = green, fontSize = 11.sp))
-                    }
-                }
-                Text("RSI $rsi · $updated", modifier = GlanceModifier.padding(top = 5.dp), style = TextStyle(color = muted, fontSize = 10.sp))
-            }
-        }
+class DaonWidget:GlanceAppWidget(){override suspend fun provideGlance(context:Context,id:androidx.glance.GlanceId){provideContent{
+    val p=context.getSharedPreferences("settings",0);val sym=p.getString("last_symbol",p.getString("symbol","BTCUSDT"))?:"BTCUSDT";val side=p.getString("last_side","WAIT")?:"WAIT";val price=p.getString("last_price","-")?:"-";val sSl=p.getString("last_sl","-")?:"-";val sTp=p.getString("last_tp","-")?:"-";val rsi=p.getString("last_rsi","-")?:"-";val updated=p.getString("last_updated","앱에서 분석 필요")?:"앱에서 분석 필요";val setSl=String.format(Locale.KOREA,"%.1f%%",p.getFloat("sl",1f));val setTp=String.format(Locale.KOREA,"%.1f%%",p.getFloat("tp",1.5f));val lev=p.getInt("lev",3);val open=Intent(context,MainActivity::class.java)
+    val white=ColorProvider(Color(0xFFF7F9FC),Color(0xFFF7F9FC));val muted=ColorProvider(Color(0xFF9AA5B4),Color(0xFF9AA5B4));val green=ColorProvider(Color(0xFF19D38A),Color(0xFF19D38A));val red=ColorProvider(Color(0xFFFF4D63),Color(0xFFFF4D63));val bg=ColorProvider(Color(0xFF0D1420),Color(0xFF0D1420));val accent=ColorProvider(Color(0xFF8B7CFF),Color(0xFF8B7CFF));val line=ColorProvider(Color(0xFF253044),Color(0xFF253044));val sideColor=when(side){"LONG"->green;"SHORT"->red;else->muted}
+    Column(GlanceModifier.fillMaxSize().background(bg).padding(14.dp).clickable(actionStartActivity(open))){
+        Row(GlanceModifier.fillMaxWidth()){Text("다온이 선물매매",style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=14.sp));Text("  v2.5",style=TextStyle(color=accent,fontWeight=FontWeight.Bold,fontSize=13.sp))}
+        Row(GlanceModifier.fillMaxWidth().padding(top=7.dp)){Column(GlanceModifier.defaultWeight()){Text(sym,style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=14.sp));Text(price,modifier=GlanceModifier.padding(top=2.dp),style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=20.sp))};Column(horizontalAlignment=Alignment.Horizontal.End){Text(when(side){"LONG"->"▲ LONG";"SHORT"->"▼ SHORT";else->"● 대기"},style=TextStyle(color=sideColor,fontWeight=FontWeight.Bold,fontSize=14.sp));Text("One Candle",modifier=GlanceModifier.padding(top=2.dp),style=TextStyle(color=muted,fontSize=10.sp))}}
+        Box(GlanceModifier.fillMaxWidth().height(1.dp).padding(top=7.dp).background(line)){}
+        Row(GlanceModifier.fillMaxWidth().padding(top=8.dp)){Column(GlanceModifier.defaultWeight()){Text("RSI",style=TextStyle(color=muted,fontSize=10.sp));Text(rsi,style=TextStyle(color=accent,fontWeight=FontWeight.Bold,fontSize=12.sp))};Column(GlanceModifier.defaultWeight()){Text("손절",style=TextStyle(color=muted,fontSize=10.sp));Text(if(side=="WAIT")setSl else sSl,style=TextStyle(color=red,fontWeight=FontWeight.Bold,fontSize=12.sp))};Column(GlanceModifier.defaultWeight()){Text("목표",style=TextStyle(color=muted,fontSize=10.sp));Text(if(side=="WAIT")setTp else sTp,style=TextStyle(color=green,fontWeight=FontWeight.Bold,fontSize=12.sp))};Column(horizontalAlignment=Alignment.Horizontal.End){Text("레버리지",style=TextStyle(color=muted,fontSize=10.sp));Text("${lev}배",style=TextStyle(color=white,fontWeight=FontWeight.Bold,fontSize=12.sp))}}
+        Text("4H/1H 추세 + 15M 진입 · $updated",modifier=GlanceModifier.padding(top=8.dp),style=TextStyle(color=muted,fontSize=9.sp))
     }
-}
-
-class DaonWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = DaonWidget()
-}
+}}}
+class DaonWidgetReceiver:GlanceAppWidgetReceiver(){override val glanceAppWidget:GlanceAppWidget=DaonWidget()}
