@@ -1,0 +1,24 @@
+name: Optimize iFVG 15m
+on:
+  push:
+    paths:
+      - 'tools/optimize_ifvg_15m.py'
+      - '.github/workflows/optimize-ifvg-15m.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy requests
+      - name: Run optimization
+        run: python tools/optimize_ifvg_15m.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ifvg-15m-optimization
+          path: backtest_opt_results/
