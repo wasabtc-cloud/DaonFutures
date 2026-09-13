@@ -1,0 +1,29 @@
+name: Upbit MoneyFlow V2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/upbit_moneyflow_v2.py'
+      - '.github/workflows/upbit-moneyflow-v2.yml'
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy matplotlib requests
+      - name: Run v2 backtest
+        run: python backtest/upbit_moneyflow_v2.py
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: upbit-moneyflow-v2
+          path: |
+            backtest_equity.png
+            backtest_results.csv
+            upbit_moneyflow_v2_trades.csv
