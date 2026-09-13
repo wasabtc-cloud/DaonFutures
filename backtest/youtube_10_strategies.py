@@ -1,96 +1,177 @@
-import io, zipfile, urllib.request
-from datetime import datetime, timezone, timedelta, date
-import pandas as pd, numpy as np
+import math, time, requests
+from datetime import datetime, timezone, timedelta
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-SYMBOL='BTCUSDT'; INTERVAL='15m'; YEARS=3; FEE=.0005; SLIP=.0002
-END=pd.Timestamp(datetime.now(timezone.utc)); START=END-pd.Timedelta(days=365*YEARS)
-BASE='https://data.binance.vision/data/futures/um'
+START_CAPITAL=1_000_000.0
+TARGET=100_000_000.0
+FEE=0.0005
+SLIP=0.0003
+COST=FEE+SLIP
+TOP_LIQUID=60
+DAYS=365
+WARMUP=90
+BASE='https://api.upbit.com/v1'
 
-def read_zip(url):
-    try:
-        with urllib.request.urlopen(url, timeout=60) as r:
-            raw=r.read()
-        with zipfile.ZipFile(io.BytesIO(raw)) as z:
-            return pd.read_csv(z.open(z.namelist()[0]), header=None)
-    except Exception:
-        return pd.DataFrame()
 
-def get_data():
-    parts=[]
-    cur=pd.Timestamp(START.year, START.month, 1, tz='UTC')
-    last_month=pd.Timestamp(END.year, END.month, 1, tz='UTC')
-    while cur < last_month:
-        url=f'{BASE}/monthly/klines/{SYMBOL}/{INTERVAL}/{SYMBOL}-{INTERVAL}-{cur.year}-{cur.month:02d}.zip'
-        x=read_zip(url)
-        if not x.empty: parts.append(x)
-        cur += pd.offsets.MonthBegin(1)
-    d=date(END.year, END.month, 1)
-    end_day=END.date()
-    while d <= end_day:
-        url=f'{BASE}/daily/klines/{SYMBOL}/{INTERVAL}/{SYMBOL}-{INTERVAL}-{d.isoformat()}.zip'
-        x=read_zip(url)
-        if not x.empty: parts.append(x)
-        d += timedelta(days=1)
-    if not parts:
-        raise RuntimeError('No Binance Vision data downloaded')
-    raw=pd.concat(parts, ignore_index=True).iloc[:,:12]
-    raw.columns=['t','o','h','l','c','v','ct','q','n','tb','tq','i']
-    for c in ['t','o','h','l','c','v']:
-        raw[c]=pd.to_numeric(raw[c], errors='coerce')
-    raw=raw.dropna(subset=['t','o','h','l','c','v'])
-    raw['dt']=pd.to_datetime(raw.t.astype('int64'), unit='ms', utc=True)
-    raw=raw.drop_duplicates('t').set_index('dt').sort_index()
-    return raw.loc[(raw.index>=START)&(raw.index<=END)]
+def get_json(path, params=None):
+    r=requests.get(BASE+path, params=params, timeout=20, headers={'User-Agent':'DaonFutures-100X'})
+    r.raise_for_status()
+    time.sleep(0.11)
+    return r.json()
 
-def ind(d):
-    d=d.copy(); d['ema20']=d.c.ewm(span=20,adjust=False).mean(); d['ema50']=d.c.ewm(span=50,adjust=False).mean(); d['ema200']=d.c.ewm(span=200,adjust=False).mean()
-    d['atr']=pd.concat([(d.h-d.l),(d.h-d.c.shift()).abs(),(d.l-d.c.shift()).abs()],axis=1).max(axis=1).rolling(14).mean()
-    d['volma']=d.v.rolling(20).mean(); d['hh20']=d.h.shift(1).rolling(20).max(); d['ll20']=d.l.shift(1).rolling(20).min(); d['hh50']=d.h.shift(1).rolling(50).max(); d['ll50']=d.l.shift(1).rolling(50).min()
-    d['mid20']=d.c.rolling(20).mean(); d['std20']=d.c.rolling(20).std(); d['bbup']=d.mid20+2*d.std20; d['bblo']=d.mid20-2*d.std20; d['bbw']=(d.bbup-d.bblo)/d.mid20
-    tp=(d.h+d.l+d.c)/3; day=d.index.floor('D'); d['vwap']=(tp*d.v).groupby(day).cumsum()/d.v.groupby(day).cumsum()
-    d['ph']=d.h.shift(1).rolling(12).max(); d['pl']=d.l.shift(1).rolling(12).min()
+
+def fetch_days(market, start, end):
+    rows=[]; to=end
+    while to>start:
+        js=get_json('/candles/days', {'market':market,'count':200,'to':to.strftime('%Y-%m-%dT%H:%M:%SZ')})
+        if not js: break
+        rows.extend(js)
+        oldest=pd.Timestamp(js[-1]['candle_date_time_utc'], tz='UTC')
+        if oldest<=start: break
+        to=oldest-pd.Timedelta(seconds=1)
+    if not rows: return pd.DataFrame()
+    d=pd.DataFrame(rows)
+    d['time']=pd.to_datetime(d['candle_date_time_utc'], utc=True)
+    d=d.drop_duplicates('time').set_index('time').sort_index()
+    out=pd.DataFrame(index=d.index)
+    out['open']=pd.to_numeric(d['opening_price'])
+    out['high']=pd.to_numeric(d['high_price'])
+    out['low']=pd.to_numeric(d['low_price'])
+    out['close']=pd.to_numeric(d['trade_price'])
+    out['value']=pd.to_numeric(d['candle_acc_trade_price'])
+    return out.loc[(out.index>=start)&(out.index<=end)]
+
+
+def load_data():
+    end=pd.Timestamp(datetime.now(timezone.utc)).floor('D')
+    start=end-pd.Timedelta(days=DAYS)
+    warm=start-pd.Timedelta(days=WARMUP)
+    markets=get_json('/market/all', {'is_details':'false'})
+    krw=[x['market'] for x in markets if x['market'].startswith('KRW-')]
+    tickers=[]
+    for i in range(0,len(krw),100):
+        tickers.extend(get_json('/ticker', {'markets':','.join(krw[i:i+100])}))
+    liq=sorted(tickers,key=lambda x:float(x.get('acc_trade_price_24h',0)),reverse=True)
+    chosen=[x['market'] for x in liq[:TOP_LIQUID]]
+    if 'KRW-BTC' not in chosen: chosen.append('KRW-BTC')
+    data={}
+    for n,m in enumerate(chosen,1):
+        try:
+            d=fetch_days(m,warm,end)
+            if len(d)>=120: data[m]=features(d)
+        except Exception as e:
+            print('skip',m,e,flush=True)
+        print('download',n,'/',len(chosen),m,flush=True)
+    return data,start,end
+
+
+def features(d):
+    d=d.copy()
+    d['mom3']=d.close.pct_change(3)
+    d['mom7']=d.close.pct_change(7)
+    d['mom14']=d.close.pct_change(14)
+    d['mom30']=d.close.pct_change(30)
+    d['mom60']=d.close.pct_change(60)
+    d['vol20']=d.close.pct_change().rolling(20).std()
+    d['sma50']=d.close.rolling(50).mean()
+    d['sma100']=d.close.rolling(100).mean()
+    d['hh20']=d.high.shift(1).rolling(20).max()
+    d['hh50']=d.high.shift(1).rolling(50).max()
+    d['value20']=d.value.rolling(20).mean()
+    d['value_ratio']=d.value/d.value20
     return d
 
-def signals(d,k):
-    long=pd.Series(False,index=d.index); short=long.copy()
-    if k==1:
-        long=(d.c>d.hh20)&(d.v>1.2*d.volma); short=(d.c<d.ll20)&(d.v>1.2*d.volma)
-    elif k==2:
-        long=(d.l<=d.hh20)&(d.c>d.hh20)&(d.c>d.ema200); short=(d.h>=d.ll20)&(d.c<d.ll20)&(d.c<d.ema200)
-    elif k==3:
-        long=(d.l<d.pl)&(d.c>d.pl)&(d.c>d.o); short=(d.h>d.ph)&(d.c<d.ph)&(d.c<d.o)
-    elif k==4:
-        long=(d.l.shift(1)<d.pl.shift(1))&(d.c.shift(1)>d.pl.shift(1))&(d.c>d.h.shift(1))&(d.c>d.ema20); short=(d.h.shift(1)>d.ph.shift(1))&(d.c.shift(1)<d.ph.shift(1))&(d.c<d.l.shift(1))&(d.c<d.ema20)
-    elif k==5:
-        long=(d.ema20>d.ema50)&(d.l<d.ema20)&(d.c>d.ema20)&(d.c>d.o); short=(d.ema20<d.ema50)&(d.h>d.ema20)&(d.c<d.ema20)&(d.c<d.o)
-    elif k==6:
-        long=(d.l<d.vwap)&(d.c>d.vwap)&(d.c>d.ema200); short=(d.h>d.vwap)&(d.c<d.vwap)&(d.c<d.ema200)
-    elif k==7:
-        long=(d.c>d.hh50)&(d.c>d.ema200); short=(d.c<d.ll50)&(d.c<d.ema200)
-    elif k==8:
-        squeeze=d.bbw<d.bbw.rolling(100).quantile(.2); long=squeeze.shift(1)&(d.c>d.bbup)&(d.c>d.ema200); short=squeeze.shift(1)&(d.c<d.bblo)&(d.c<d.ema200)
-    elif k==9:
-        long=(d.ema20>d.ema50)&(d.c>d.ema200)&(d.l<d.ema20)&(d.c>d.ema20); short=(d.ema20<d.ema50)&(d.c<d.ema200)&(d.h>d.ema20)&(d.c<d.ema20)
-    elif k==10:
-        long=(d.l<d.ll20)&(d.c>d.ll20)&(d.v>d.volma); short=(d.h>d.hh20)&(d.c<d.hh20)&(d.v>d.volma)
-    return long.fillna(False),short.fillna(False)
 
-def bt(d,L,S):
-    eq=100.; peak=100.; mdd=0.; rs=[]; pos=0; ent=sl=tp=0
-    for i in range(210,len(d)-1):
-        r=d.iloc[i]
-        if pos:
-            hit_sl=(r.l<=sl if pos==1 else r.h>=sl); hit_tp=(r.h>=tp if pos==1 else r.l<=tp)
-            if hit_sl or hit_tp:
-                ex=sl if hit_sl else tp; ret=(ex/ent-1)*pos-(FEE+SLIP)*2; eq*=max(0,1+ret); rs.append(ret); peak=max(peak,eq); mdd=max(mdd,(peak-eq)/peak); pos=0
-        if not pos and (L.iloc[i] or S.iloc[i]) and np.isfinite(r.atr) and r.atr>0:
-            pos=1 if L.iloc[i] else -1; ent=d.iloc[i+1].o*(1+SLIP*pos); risk=1.5*r.atr; sl=ent-risk*pos; tp=ent+2*risk*pos
-    wins=[x for x in rs if x>0]; losses=[x for x in rs if x<0]; pf=sum(wins)/abs(sum(losses)) if losses else np.inf
-    return {'trades':len(rs),'win_rate':100*len(wins)/len(rs) if rs else 0,'return_pct':eq-100,'PF':pf,'MDD_pct':100*mdd}
+def score_row(name, row):
+    if name=='MOM7': return row.mom7
+    if name=='MOM30': return row.mom30
+    if name=='DUAL': return 0.6*row.mom7+0.4*row.mom30
+    if name=='ACCEL': return row.mom3+0.7*row.mom7
+    if name=='BREAK20': return (row.close/row.hh20-1) if row.close>row.hh20 else np.nan
+    if name=='BREAK50': return (row.close/row.hh50-1) if row.close>row.hh50 else np.nan
+    if name=='FLOWMOM': return row.mom7*max(row.value_ratio,0)
+    if name=='LOWVOLMOM': return row.mom30/(row.vol20+1e-6)
+    return np.nan
 
-names=['Breakout+Volume','S/R Flip Retest','Liquidity Sweep','Sweep+Displacement/FVG','OrderBlock Pullback','VWAP Reclaim','Donchian50 Breakout','Bollinger Squeeze Breakout','EMA Trend Pullback','Failed Breakout Reversal']
-d=ind(get_data()); rows=[]
-print(f'Rows={len(d)} Start={d.index.min()} End={d.index.max()}', flush=True)
-for k,n in enumerate(names,1):
-    L,S=signals(d,k); z=bt(d,L,S); z.update(strategy=n,id=k); rows.append(z); print(n,z,flush=True)
-pd.DataFrame(rows).sort_values(['PF','return_pct'],ascending=False).to_csv('youtube_10_results.csv',index=False)
+
+def regime_ok(mode, btcrow):
+    if mode=='ALL': return True
+    if mode=='BTC50': return bool(btcrow.close>btcrow.sma50)
+    if mode=='BTC100': return bool(btcrow.close>btcrow.sma100)
+    return True
+
+
+def run_combo(data, dates, strategy, topk, hold, regime):
+    btc=data.get('KRW-BTC')
+    if btc is None: return None
+    eq=START_CAPITAL; peak=eq; mdd=0.0; trades=0; wins=0; gross_win=0.0; gross_loss=0.0
+    curve=[]; i=0
+    while i+hold+1 < len(dates):
+        sig=dates[i]; entry_t=dates[i+1]; exit_t=dates[i+1+hold]
+        if sig not in btc.index or entry_t not in btc.index:
+            i+=hold; continue
+        if not regime_ok(regime,btc.loc[sig]):
+            curve.append((exit_t,eq)); i+=hold; continue
+        ranked=[]
+        for m,d in data.items():
+            if m=='KRW-BTC' or sig not in d.index or entry_t not in d.index or exit_t not in d.index: continue
+            r=d.loc[sig]
+            s=score_row(strategy,r)
+            if not np.isfinite(s) or s<=0: continue
+            if r.value < 500_000_000: continue
+            ranked.append((float(s),m))
+        ranked.sort(reverse=True)
+        picks=ranked[:topk]
+        if not picks:
+            curve.append((exit_t,eq)); i+=hold; continue
+        rets=[]
+        for _,m in picks:
+            d=data[m]
+            en=float(d.loc[entry_t,'open'])*(1+COST)
+            ex=float(d.loc[exit_t,'open'])*(1-COST)
+            ret=ex/en-1
+            if np.isfinite(ret): rets.append(ret)
+        if rets:
+            pr=float(np.mean(rets)); eq*=max(0.0,1+pr); trades+=len(rets)
+            if pr>0: wins+=1; gross_win+=pr
+            else: gross_loss+=-pr
+            peak=max(peak,eq); mdd=max(mdd,(peak-eq)/peak if peak else 1)
+            curve.append((exit_t,eq))
+        i+=hold
+    pf=(gross_win/gross_loss) if gross_loss>0 else (999.0 if gross_win>0 else 0.0)
+    return {'strategy':strategy,'topk':topk,'hold_days':hold,'regime':regime,'final_capital_krw':eq,
+            'return_pct':(eq/START_CAPITAL-1)*100,'target_hit':eq>=TARGET,'rebalance_wins':wins,'trades':trades,
+            'profit_factor':pf,'max_drawdown_pct':mdd*100,'curve':curve}
+
+
+def main():
+    data,start,end=load_data()
+    all_dates=sorted(set.intersection(*[set(d.index) for d in data.values() if len(d)>0])) if data else []
+    all_dates=[x for x in all_dates if x>=start and x<=end]
+    strategies=['MOM7','MOM30','DUAL','ACCEL','BREAK20','BREAK50','FLOWMOM','LOWVOLMOM']
+    rows=[]; curves={}
+    total=len(strategies)*4*6*3; c=0
+    for s in strategies:
+      for k in [1,2,3,5]:
+       for h in [1,2,3,5,7,14]:
+        for rg in ['ALL','BTC50','BTC100']:
+            c+=1
+            z=run_combo(data,all_dates,s,k,h,rg)
+            if z:
+                curves[(s,k,h,rg)]=z.pop('curve'); rows.append(z)
+            if c%50==0: print('tested',c,'/',total,flush=True)
+    res=pd.DataFrame(rows).sort_values(['final_capital_krw','profit_factor'],ascending=False)
+    res.to_csv('backtest_results.csv',index=False)
+    plt.figure(figsize=(12,6))
+    for _,r in res.head(5).iterrows():
+        key=(r.strategy,int(r.topk),int(r.hold_days),r.regime); cv=curves.get(key,[])
+        if cv:
+            x=[a for a,b in cv]; y=[b for a,b in cv]; plt.plot(x,y,label=f'{key[0]} K{key[1]} H{key[2]} {key[3]}')
+    plt.axhline(TARGET,linestyle='--',linewidth=1)
+    plt.yscale('log'); plt.ylabel('KRW (log)'); plt.xlabel('Time'); plt.title('Upbit 100X Strategy Search - Top 5'); plt.legend(); plt.tight_layout(); plt.savefig('backtest_equity.png',dpi=150)
+    print(res.head(20).to_string(index=False),flush=True)
+    print('TARGET_HITS',int(res.target_hit.sum()),'BEST',float(res.iloc[0].final_capital_krw),flush=True)
+
+if __name__=='__main__': main()
