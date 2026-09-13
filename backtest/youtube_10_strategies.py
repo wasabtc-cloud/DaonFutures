@@ -1,20 +1,46 @@
-import pandas as pd, numpy as np, requests, time
-from datetime import datetime, timezone, timedelta
+import io, zipfile, urllib.request
+from datetime import datetime, timezone, timedelta, date
+import pandas as pd, numpy as np
 
 SYMBOL='BTCUSDT'; INTERVAL='15m'; YEARS=3; FEE=.0005; SLIP=.0002
-URL='https://fapi.binance.com/fapi/v1/klines'
+END=pd.Timestamp(datetime.now(timezone.utc)); START=END-pd.Timedelta(days=365*YEARS)
+BASE='https://data.binance.vision/data/futures/um'
+
+def read_zip(url):
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            raw=r.read()
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            return pd.read_csv(z.open(z.namelist()[0]), header=None)
+    except Exception:
+        return pd.DataFrame()
 
 def get_data():
-    end=int(datetime.now(timezone.utc).timestamp()*1000); start=int((datetime.now(timezone.utc)-timedelta(days=365*YEARS)).timestamp()*1000)
-    out=[]; cur=start
-    while cur<end:
-        r=requests.get(URL,params={'symbol':SYMBOL,'interval':INTERVAL,'startTime':cur,'endTime':end,'limit':1500},timeout=30); r.raise_for_status(); x=r.json()
-        if not x: break
-        out+=x; cur=x[-1][0]+1; time.sleep(.03)
-    d=pd.DataFrame(out,columns=['t','o','h','l','c','v','ct','q','n','tb','tq','i'])
-    for c in ['o','h','l','c','v']: d[c]=pd.to_numeric(d[c])
-    d['dt']=pd.to_datetime(d.t,unit='ms',utc=True); d=d.drop_duplicates('t').set_index('dt')
-    return d
+    parts=[]
+    cur=pd.Timestamp(START.year, START.month, 1, tz='UTC')
+    last_month=pd.Timestamp(END.year, END.month, 1, tz='UTC')
+    while cur < last_month:
+        url=f'{BASE}/monthly/klines/{SYMBOL}/{INTERVAL}/{SYMBOL}-{INTERVAL}-{cur.year}-{cur.month:02d}.zip'
+        x=read_zip(url)
+        if not x.empty: parts.append(x)
+        cur += pd.offsets.MonthBegin(1)
+    d=date(END.year, END.month, 1)
+    end_day=END.date()
+    while d <= end_day:
+        url=f'{BASE}/daily/klines/{SYMBOL}/{INTERVAL}/{SYMBOL}-{INTERVAL}-{d.isoformat()}.zip'
+        x=read_zip(url)
+        if not x.empty: parts.append(x)
+        d += timedelta(days=1)
+    if not parts:
+        raise RuntimeError('No Binance Vision data downloaded')
+    raw=pd.concat(parts, ignore_index=True).iloc[:,:12]
+    raw.columns=['t','o','h','l','c','v','ct','q','n','tb','tq','i']
+    for c in ['t','o','h','l','c','v']:
+        raw[c]=pd.to_numeric(raw[c], errors='coerce')
+    raw=raw.dropna(subset=['t','o','h','l','c','v'])
+    raw['dt']=pd.to_datetime(raw.t.astype('int64'), unit='ms', utc=True)
+    raw=raw.drop_duplicates('t').set_index('dt').sort_index()
+    return raw.loc[(raw.index>=START)&(raw.index<=END)]
 
 def ind(d):
     d=d.copy(); d['ema20']=d.c.ewm(span=20,adjust=False).mean(); d['ema50']=d.c.ewm(span=50,adjust=False).mean(); d['ema200']=d.c.ewm(span=200,adjust=False).mean()
@@ -27,25 +53,25 @@ def ind(d):
 
 def signals(d,k):
     long=pd.Series(False,index=d.index); short=long.copy()
-    if k==1: # breakout retest proxy: prior 20 high/low break with volume
+    if k==1:
         long=(d.c>d.hh20)&(d.v>1.2*d.volma); short=(d.c<d.ll20)&(d.v>1.2*d.volma)
-    elif k==2: # S/R flip retest: wick through prior level and close back trend side
+    elif k==2:
         long=(d.l<=d.hh20)&(d.c>d.hh20)&(d.c>d.ema200); short=(d.h>=d.ll20)&(d.c<d.ll20)&(d.c<d.ema200)
-    elif k==3: # liquidity sweep reversal
+    elif k==3:
         long=(d.l<d.pl)&(d.c>d.pl)&(d.c>d.o); short=(d.h>d.ph)&(d.c<d.ph)&(d.c<d.o)
-    elif k==4: # liquidity sweep + displacement/FVG proxy
+    elif k==4:
         long=(d.l.shift(1)<d.pl.shift(1))&(d.c.shift(1)>d.pl.shift(1))&(d.c>d.h.shift(1))&(d.c>d.ema20); short=(d.h.shift(1)>d.ph.shift(1))&(d.c.shift(1)<d.ph.shift(1))&(d.c<d.l.shift(1))&(d.c<d.ema20)
-    elif k==5: # order-block style pullback in trend
+    elif k==5:
         long=(d.ema20>d.ema50)&(d.l<d.ema20)&(d.c>d.ema20)&(d.c>d.o); short=(d.ema20<d.ema50)&(d.h>d.ema20)&(d.c<d.ema20)&(d.c<d.o)
-    elif k==6: # VWAP reclaim/reject
+    elif k==6:
         long=(d.l<d.vwap)&(d.c>d.vwap)&(d.c>d.ema200); short=(d.h>d.vwap)&(d.c<d.vwap)&(d.c<d.ema200)
-    elif k==7: # Donchian 50 breakout
+    elif k==7:
         long=(d.c>d.hh50)&(d.c>d.ema200); short=(d.c<d.ll50)&(d.c<d.ema200)
-    elif k==8: # Bollinger squeeze breakout
+    elif k==8:
         squeeze=d.bbw<d.bbw.rolling(100).quantile(.2); long=squeeze.shift(1)&(d.c>d.bbup)&(d.c>d.ema200); short=squeeze.shift(1)&(d.c<d.bblo)&(d.c<d.ema200)
-    elif k==9: # EMA trend pullback + S/R
+    elif k==9:
         long=(d.ema20>d.ema50)&(d.c>d.ema200)&(d.l<d.ema20)&(d.c>d.ema20); short=(d.ema20<d.ema50)&(d.c<d.ema200)&(d.h>d.ema20)&(d.c<d.ema20)
-    elif k==10: # false breakout / failed breakout
+    elif k==10:
         long=(d.l<d.ll20)&(d.c>d.ll20)&(d.v>d.volma); short=(d.h>d.hh20)&(d.c<d.hh20)&(d.v>d.volma)
     return long.fillna(False),short.fillna(False)
 
@@ -56,7 +82,7 @@ def bt(d,L,S):
         if pos:
             hit_sl=(r.l<=sl if pos==1 else r.h>=sl); hit_tp=(r.h>=tp if pos==1 else r.l<=tp)
             if hit_sl or hit_tp:
-                ex=sl if hit_sl else tp; ret=(ex/ent-1)*pos-(FEE+SLIP)*2; eq*=1+ret; rs.append(ret); peak=max(peak,eq); mdd=max(mdd,(peak-eq)/peak); pos=0
+                ex=sl if hit_sl else tp; ret=(ex/ent-1)*pos-(FEE+SLIP)*2; eq*=max(0,1+ret); rs.append(ret); peak=max(peak,eq); mdd=max(mdd,(peak-eq)/peak); pos=0
         if not pos and (L.iloc[i] or S.iloc[i]) and np.isfinite(r.atr) and r.atr>0:
             pos=1 if L.iloc[i] else -1; ent=d.iloc[i+1].o*(1+SLIP*pos); risk=1.5*r.atr; sl=ent-risk*pos; tp=ent+2*risk*pos
     wins=[x for x in rs if x>0]; losses=[x for x in rs if x<0]; pf=sum(wins)/abs(sum(losses)) if losses else np.inf
@@ -64,6 +90,7 @@ def bt(d,L,S):
 
 names=['Breakout+Volume','S/R Flip Retest','Liquidity Sweep','Sweep+Displacement/FVG','OrderBlock Pullback','VWAP Reclaim','Donchian50 Breakout','Bollinger Squeeze Breakout','EMA Trend Pullback','Failed Breakout Reversal']
 d=ind(get_data()); rows=[]
+print(f'Rows={len(d)} Start={d.index.min()} End={d.index.max()}', flush=True)
 for k,n in enumerate(names,1):
-    L,S=signals(d,k); z=bt(d,L,S); z.update(strategy=n,id=k); rows.append(z); print(n,z)
+    L,S=signals(d,k); z=bt(d,L,S); z.update(strategy=n,id=k); rows.append(z); print(n,z,flush=True)
 pd.DataFrame(rows).sort_values(['PF','return_pct'],ascending=False).to_csv('youtube_10_results.csv',index=False)
