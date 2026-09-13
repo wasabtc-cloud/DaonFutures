@@ -2,27 +2,42 @@ name: Backtest 1Y
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
   push:
     paths:
       - 'backtest/**'
       - '.github/workflows/backtest-1y.yml'
 
+concurrency:
+  group: daonfutures-backtest-1y
+  cancel-in-progress: false
+
 jobs:
   backtest:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install pandas numpy matplotlib
-      - name: Run backtest
+        run: pip install pandas numpy matplotlib requests
+      - name: Run entry and stop validation
         run: python backtest/backtest_1y.py
-      - name: Upload results
+      - name: Upload all research results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: daonfutures-backtest-1y
+          name: daonfutures-nightly-research
+          if-no-files-found: warn
+          retention-days: 14
           path: |
             backtest_equity.png
             backtest_results.csv
+            entry_stop_grid.csv
+            entry_stop_trades.csv
+            green_grid_results.csv
+            green_signal_days.csv
+            one_minute_feature_weights.csv
