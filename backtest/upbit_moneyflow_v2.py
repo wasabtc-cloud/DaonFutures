@@ -1,8 +1,15 @@
 import math
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
+# Ensure repository root is importable when this file is executed directly.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from backtest.upbit_moneyflow_1y import get_json, fetch_candles, fetch_days, ema, atr
 
@@ -28,8 +35,6 @@ def build_features(df15):
     d['green'] = d['close'] > d['open']
     d['bar_ret'] = d['close'] / d['open'] - 1
 
-    # Strict money-flow breakout: large volume expansion, positive acceleration,
-    # but exclude already-overheated moves.
     d['breakout'] = (
         (d['close'] > d['prior20_high']) &
         (d['value_ratio'] >= 2.0) &
@@ -73,7 +78,6 @@ def make_entries(data, daily_universe, btc_filter):
             if i + 2 >= len(d):
                 continue
             level = float(d.iloc[i]['prior20_high'])
-            # Retest must happen quickly, reducing stale breakouts.
             for j in range(i + 1, min(i + 5, len(d) - 1)):
                 r = d.iloc[j]
                 touched = r['low'] <= level * 1.002
@@ -149,13 +153,12 @@ def run_variant(data, entries, mode):
                             reason = 'ema20_trail'
 
                 if exit_price is not None:
-                    capital = position['qty'] * exit_price * (1 - FEE)
+                    capital += position['qty'] * exit_price * (1 - FEE)
                     ret = capital / position['capital_before'] - 1
                     trades.append({'market':m,'entry_time':position['time'],'exit_time':t,
                                    'return_pct':ret*100,'reason':reason})
                     position = None
 
-        # Max one new position per UTC day.
         day = t.floor('D')
         if position is None and t in grouped and day != last_entry_day:
             for _, sig in grouped[t].iterrows():
@@ -167,7 +170,6 @@ def run_variant(data, entries, mode):
                 risk = entry - stop
                 if risk <= 0:
                     continue
-                # One coin at a time, but cap capital at risk so stop-loss ~= 2% account risk.
                 risk_cash = capital * 0.02
                 qty_by_risk = risk_cash / risk
                 qty_by_cash = (capital * (1 - FEE)) / entry
