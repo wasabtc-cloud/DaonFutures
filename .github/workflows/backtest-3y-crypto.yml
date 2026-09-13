@@ -1,0 +1,29 @@
+name: Backtest 3Y Crypto
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/backtest_3y_crypto.py'
+      - '.github/workflows/backtest-3y-crypto.yml'
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy
+      - name: Run BTC ETH 5m 15m 3-year backtest
+        run: python backtest/backtest_3y_crypto.py
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-backtest-3y-crypto
+          path: |
+            backtest_3y_summary.csv
+            backtest_3y_trades.csv
