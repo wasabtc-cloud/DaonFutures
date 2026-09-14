@@ -26,4 +26,7 @@ jobs:
           path: |
             results_9am/upbit_9am_samples.csv
             results_9am/upbit_9am_metrics.csv
-            results_9am/upbit_9am_top3_daily.csv
+            results_9am/upbit_9am_predicted_top5_daily.csv
+            results_9am/upbit_9am_realized_top5_daily.csv
+            results_9am/upbit_9am_top5_repeat_summary.csv
+            results_9am/upbit_9am_top5_rank_profile.csv
