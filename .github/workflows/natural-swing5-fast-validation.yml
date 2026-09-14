@@ -1,0 +1,43 @@
+name: Natural SWING5 Fast Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      SWING5_CACHE_DIR: .cache/swing5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore SWING5 market-data cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/swing5
+          key: swing5-market-data-v1-${{ runner.os }}
+          restore-keys: |
+            swing5-market-data-v1-
+
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+
+      - name: Run cached parallel natural-prevalence SWING5 validation
+        run: python backtest/natural_prevalence_swing5_fast.py
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-natural-swing5-fast-validation
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            natural_swing5_summary.csv
+            natural_swing5_monthly.csv
+            natural_swing5_trades.csv
