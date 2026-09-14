@@ -2,6 +2,12 @@ name: Upbit 9AM Top5 Profile
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backtest/upbit_9am_scanner.py'
+      - 'backtest/upbit_9am_top5_enrich.py'
+      - '.github/workflows/upbit-9am-top5-profile.yml'
 
 jobs:
   research:
