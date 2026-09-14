@@ -1,0 +1,34 @@
+name: Daily Surge Accumulation Research
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/upbit_daily_surge_accumulation.py'
+      - '.github/workflows/daily-surge-accumulation.yml'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run Daily Surge + Accumulation research
+        run: python backtest/upbit_daily_surge_accumulation.py
+      - name: Upload research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-daily-surge-accumulation
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            results_daily_surge/daily_surge_samples.csv
+            results_daily_surge/daily_surge_metrics.csv
+            results_daily_surge/daily_surge_top3_daily.csv
+            results_daily_surge/daily_surge_first_detection.csv
