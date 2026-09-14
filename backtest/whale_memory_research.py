@@ -76,8 +76,12 @@ def main():
             d=candles(m,start,end)
             if len(d)<700: continue
             x=enrich(d,btc); x['market']=m; x=x.loc[x.index>=eval_start]
-            parts.append(x[x.index.minute.eq(0)])
+            hourly_mask=(x.index.minute == 0)
+            sample=x.loc[hourly_mask]
+            if not sample.empty: parts.append(sample)
         except Exception as e: print('skip',m,e,flush=True)
+    if not parts:
+        raise RuntimeError('No valid market samples were produced')
     z=pd.concat(parts).replace([np.inf,-np.inf],np.nan)
     z.reset_index(names='time_utc').to_csv(OUT/'whale_memory_samples.csv',index=False)
     feats=['vr1h','vr4h','vr24h','whale72h','absorption','rel24h','range4h']
