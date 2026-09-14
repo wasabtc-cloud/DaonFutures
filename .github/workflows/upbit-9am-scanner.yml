@@ -1,0 +1,29 @@
+name: Upbit 9AM Pre-Surge Scanner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run 9AM scanner backtest
+        run: python backtest/upbit_9am_scanner.py
+      - name: Upload scanner results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-upbit-9am-scanner
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            results_9am/upbit_9am_samples.csv
+            results_9am/upbit_9am_metrics.csv
+            results_9am/upbit_9am_top3_daily.csv
