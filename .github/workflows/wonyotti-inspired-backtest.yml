@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'backtest/wonyotti_inspired_backtest.py'
+      - 'backtest/wonyotti_multitf_v2.py'
       - '.github/workflows/wonyotti-inspired-backtest.yml'
 
 jobs:
@@ -32,3 +33,28 @@ jobs:
             backtest/wonyotti_inspired_trades.csv
             backtest/wonyotti_inspired_summary.csv
             backtest/wonyotti_inspired_monthly.csv
+
+  multitf_v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run multi-timeframe v2 backtest
+        run: cd backtest && python wonyotti_multitf_v2.py
+      - name: Upload v2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wonyotti-multitf-v2
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            backtest/wonyotti_mtf_v2_trades.csv
+            backtest/wonyotti_mtf_v2_summary.csv
+            backtest/wonyotti_mtf_v2_monthly.csv
+            backtest/wonyotti_mtf_v2_tf_signals.csv
