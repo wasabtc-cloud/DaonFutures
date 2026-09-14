@@ -1,0 +1,45 @@
+name: Natural SWING 5 10 20 Fast Comparison
+
+on:
+  workflow_dispatch:
+
+jobs:
+  compare-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SWING_COMPARE_CACHE_DIR: .cache/swing_compare
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore market-data cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/swing_compare
+          key: swing-compare-market-data-v1-${{ runner.os }}
+          restore-keys: |
+            swing-compare-market-data-v1-
+
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+
+      - name: Run fast SWING 5 10 20 comparison
+        run: python backtest/natural_prevalence_swing_compare_fast.py
+
+      - name: Upload comparison results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-swing-5-10-20-fast-comparison
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            natural_swing_compare_summary.csv
+            natural_swing_compare_monthly.csv
+            natural_swing5_compare_trades.csv
+            natural_swing10_compare_trades.csv
+            natural_swing20_compare_trades.csv
