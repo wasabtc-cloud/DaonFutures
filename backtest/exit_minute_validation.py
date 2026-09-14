@@ -6,8 +6,9 @@ import pandas as pd
 BASE = 'https://api.upbit.com/v1'
 FEE = 0.0005
 SLIP = 0.0003
-STOP_TYPE = 'SWING20'
+STOP_TYPES = ['SWING5', 'SWING10', 'SWING20']
 HORIZON_MINUTES = 360
+TRAIL_LOOKBACK = 20
 MAX_RPS = 8
 
 _last_calls = []
@@ -22,13 +23,12 @@ def throttle():
             return
         time.sleep(0.05)
 
-
 def get(path, params=None, retries=5):
     for k in range(retries):
         throttle()
         try:
             r = requests.get(BASE + path, params=params, timeout=25,
-                             headers={'User-Agent':'DaonFutures-MinuteExitValidation'})
+                             headers={'User-Agent':'DaonFutures-Swing-Comparison'})
             if r.status_code == 429:
                 time.sleep(0.5 * (k + 1))
                 continue
@@ -38,7 +38,6 @@ def get(path, params=None, retries=5):
             if k == retries - 1:
                 raise
             time.sleep(0.35 * (k + 1))
-
 
 def fetch_path(market, entry_time):
     start = pd.Timestamp(entry_time)
@@ -74,7 +73,6 @@ def fetch_path(market, entry_time):
     return out.loc[(out.index >= start - pd.Timedelta(minutes=25)) &
                    (out.index <= start + pd.Timedelta(minutes=HORIZON_MINUTES))]
 
-
 def max_drawdown_from_r(rvals, risk_fraction=0.01):
     eq = 100.0
     peak = eq
@@ -86,7 +84,6 @@ def max_drawdown_from_r(rvals, risk_fraction=0.01):
             mdd = max(mdd, (peak - eq) / peak)
     return mdd * 100.0, eq
 
-
 def loss_streak(rvals):
     best = cur = 0
     for r in rvals:
@@ -97,8 +94,7 @@ def loss_streak(rvals):
             cur = 0
     return best
 
-
-def simulate(path, entry, initial_stop, mode):
+def simulate(path, entry, initial_stop):
     risk = entry - initial_stop
     if risk <= 0 or path.empty:
         return np.nan, 'invalid'
@@ -110,7 +106,7 @@ def simulate(path, entry, initial_stop, mode):
     remaining = 1.0
     lows_hist = []
 
-    for ts, bar in path.iterrows():
+    for _, bar in path.iterrows():
         lo = float(bar.low)
         hi = float(bar.high)
         lows_hist.append(lo)
@@ -119,85 +115,71 @@ def simulate(path, entry, initial_stop, mode):
         if lo <= active_stop:
             stop_fill = active_stop * (1 - SLIP)
             stop_r = (stop_fill - entry) / risk
-            realized_r += remaining * stop_r
-            # approximate two-sided fees in R on the remaining piece
-            realized_r -= remaining * ((entry * FEE + stop_fill * FEE) / risk)
-            return realized_r, 'stop_or_trail'
-
-        if mode == 'FULL_3R':
-            if hi >= tp3:
-                fill = tp3 * (1 - SLIP)
-                r = (fill - entry) / risk
-                r -= (entry * FEE + fill * FEE) / risk
-                return r, '3R'
-            continue
+            stop_r -= (entry * FEE + stop_fill * FEE) / risk
+            return realized_r + remaining * stop_r, 'stop_or_trail'
 
         if not partial and hi >= tp2:
-            frac = 0.30 if mode == 'TP2R_30_TRAIL_SWING20' else 0.50
             fill = tp2 * (1 - SLIP)
             piece_r = (fill - entry) / risk
             piece_r -= (entry * FEE + fill * FEE) / risk
-            realized_r += frac * piece_r
-            remaining = 1.0 - frac
+            realized_r += 0.50 * piece_r
+            remaining = 0.50
             partial = True
             active_stop = max(active_stop, entry)
             continue
 
         if partial:
-            # Trail using only completed bars: prior 20 one-minute lows, never below breakeven.
-            if len(lows_hist) >= 21:
-                prior20_low = min(lows_hist[-21:-1])
-                active_stop = max(active_stop, prior20_low)
+            # Same exit rule for every initial stop candidate: prior 20 completed 1m lows.
+            if len(lows_hist) >= TRAIL_LOOKBACK + 1:
+                prior_low = min(lows_hist[-(TRAIL_LOOKBACK + 1):-1])
+                active_stop = max(active_stop, prior_low)
             if hi >= tp3:
                 fill = tp3 * (1 - SLIP)
                 piece_r = (fill - entry) / risk
                 piece_r -= (entry * FEE + fill * FEE) / risk
-                realized_r += remaining * piece_r
-                return realized_r, 'runner_3R'
+                return realized_r + remaining * piece_r, 'runner_3R'
 
-    # Close at the last available 1m close after six-hour evaluation window.
     fill = float(path.close.iloc[-1]) * (1 - SLIP)
     piece_r = (fill - entry) / risk
     piece_r -= (entry * FEE + fill * FEE) / risk
-    realized_r += remaining * piece_r
-    return realized_r, 'time_exit'
-
+    return realized_r + remaining * piece_r, 'time_exit'
 
 def main():
     tr = pd.read_csv('entry_stop_trades.csv')
-    g = tr[tr['stop_type'].eq(STOP_TYPE)].copy()
+    tr['entry_time'] = pd.to_datetime(tr['entry_time'], utc=True)
+    g = tr[tr['stop_type'].isin(STOP_TYPES)].copy()
     if g.empty:
-        raise RuntimeError(f'No {STOP_TYPE} rows in entry_stop_trades.csv')
-    g['entry_time'] = pd.to_datetime(g['entry_time'], utc=True)
-    g = g.sort_values('entry_time').reset_index(drop=True)
+        raise RuntimeError('No SWING5/SWING10/SWING20 rows in entry_stop_trades.csv')
+    g = g.sort_values(['entry_time', 'stop_type']).reset_index(drop=True)
 
-    modes = ['FULL_3R', 'TP2R_30_TRAIL_SWING20', 'TP2R_50_TRAIL_SWING20']
+    cache = {}
     detail = []
-    total = len(g)
-    for idx, row in g.iterrows():
-        print(f'fetch {idx+1}/{total} {row.market} {row.entry_time}', flush=True)
-        p = fetch_path(row.market, row.entry_time)
+    for _, row in g.iterrows():
+        key = (row.market, row.entry_time)
+        if key not in cache:
+            print(f'fetch {len(cache)+1} {row.market} {row.entry_time}', flush=True)
+            cache[key] = fetch_path(row.market, row.entry_time)
+        p = cache[key]
         p = p.loc[p.index >= row.entry_time]
         if p.empty:
             continue
-        for mode in modes:
-            r, reason = simulate(p, float(row.entry), float(row.stop), mode)
-            detail.append({
-                'market': row.market,
-                'label': int(row.label),
-                'entry_time': row.entry_time,
-                'strategy': mode,
-                'risk_pct': float(row.risk_pct),
-                'result_r': r,
-                'exit_reason': reason,
-            })
+        r, reason = simulate(p, float(row.entry), float(row.stop))
+        detail.append({
+            'market': row.market,
+            'label': int(row.label),
+            'entry_time': row.entry_time,
+            'stop_type': row.stop_type,
+            'risk_pct': float(row.risk_pct),
+            'result_r': r,
+            'exit_reason': reason,
+        })
 
     d = pd.DataFrame(detail).dropna(subset=['result_r'])
     if d.empty:
         raise RuntimeError('No minute validation results produced')
 
     rows = []
-    for mode, gp in d.groupby('strategy'):
+    for stop_type, gp in d.groupby('stop_type'):
         gp = gp.sort_values('entry_time')
         r = gp.result_r.astype(float)
         gross_profit = r[r > 0].sum()
@@ -205,31 +187,35 @@ def main():
         pf = gross_profit / gross_loss if gross_loss > 0 else np.inf
         mdd, ending_equity = max_drawdown_from_r(r.values)
         rows.append({
-            'strategy': mode,
+            'stop_type': stop_type,
+            'exit_rule': 'TP2R_50_TRAIL20',
             'trades': len(gp),
             'win_rate_pct': (r > 0).mean() * 100,
             'avg_r': r.mean(),
             'median_r': r.median(),
             'profit_factor_r': pf,
+            'avg_risk_pct': gp.risk_pct.mean(),
             'mdd_pct_at_1pct_risk': mdd,
             'ending_equity_at_1pct_risk': ending_equity,
             'max_consecutive_losses': loss_streak(r.values),
             'positive_2r_plus_pct': (r >= 2.0).mean() * 100,
         })
-    s = pd.DataFrame(rows).sort_values(['profit_factor_r','avg_r'], ascending=False).reset_index(drop=True)
+
+    s = pd.DataFrame(rows).sort_values(['profit_factor_r', 'avg_r'], ascending=False).reset_index(drop=True)
     s['rank'] = np.arange(1, len(s) + 1)
     s.to_csv('exit_minute_validation_summary.csv', index=False)
     d.to_csv('exit_minute_validation_trades.csv', index=False)
 
-    print('\nMINUTE-BY-MINUTE EXIT VALIDATION (SWING20)\n', flush=True)
+    print('\nSWING5 VS SWING10 VS SWING20 — IDENTICAL EXIT RULE\n', flush=True)
     print(s.to_string(index=False), flush=True)
     print('\nRULES:', flush=True)
-    print('- Entry/initial stop come from the frozen OOS SWING20 rows.', flush=True)
+    print('- Same frozen OOS GREEN entries.', flush=True)
+    print('- Only initial stop lookback differs: 5, 10, or 20 completed 1m candles.', flush=True)
+    print('- Every candidate: 50% at 2R, remainder to 3R, breakeven after TP1.', flush=True)
+    print('- Every candidate uses the same prior-20-completed-1m-low trailing rule.', flush=True)
     print('- Conservative same-bar ordering: stop before target.', flush=True)
-    print('- Partial-exit modes take 30% or 50% at 2R, move stop to breakeven, then trail by prior 20 completed 1m lows.', flush=True)
-    print('- Runner is capped at 3R for an apples-to-apples comparison.', flush=True)
-    print('- MDD/equity are research sequence metrics assuming 1% equity risk per trade, not natural-prevalence portfolio PnL.', flush=True)
-
+    print('- Fees/slippage included.', flush=True)
+    print('- MDD/equity assume 1% equity risk per trade; case-control research sample, not natural-prevalence portfolio PnL.', flush=True)
 
 if __name__ == '__main__':
     main()
