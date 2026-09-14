@@ -1,0 +1,40 @@
+name: Exit Minute Validation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/exit_minute_validation.py'
+      - '.github/workflows/exit-minute-validation.yml'
+
+concurrency:
+  group: daonfutures-exit-minute-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy matplotlib requests
+      - name: Rebuild frozen OOS entry-stop rows
+        run: python backtest/youtube_10_strategies.py
+      - name: Run minute-by-minute exit validation
+        run: python backtest/exit_minute_validation.py
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-exit-minute-validation
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            entry_stop_grid.csv
+            entry_stop_trades.csv
+            exit_minute_validation_summary.csv
+            exit_minute_validation_trades.csv
