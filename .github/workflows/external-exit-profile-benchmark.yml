@@ -1,0 +1,33 @@
+name: External Exit Profile Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backtest/external_exit_profile_benchmark.py'
+      - '.github/workflows/external-exit-profile-benchmark.yml'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run external exit benchmark
+        run: cd backtest && python external_exit_profile_benchmark.py
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-exit-profile-benchmark
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            backtest/external_exit_profile_trades.csv
+            backtest/external_exit_profile_summary.csv
