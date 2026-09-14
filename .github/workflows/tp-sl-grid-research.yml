@@ -1,0 +1,33 @@
+name: TP SL Grid Research
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backtest/tp_sl_grid_research.py'
+      - '.github/workflows/tp-sl-grid-research.yml'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run TP SL grid research
+        run: cd backtest && python tp_sl_grid_research.py
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tp-sl-grid-research
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            backtest/tp_sl_grid_trades.csv
+            backtest/tp_sl_grid_summary.csv
