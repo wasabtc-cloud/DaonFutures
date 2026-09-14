@@ -7,6 +7,7 @@ on:
     paths:
       - 'backtest/upbit_9am_scanner.py'
       - 'backtest/upbit_9am_top5_enrich.py'
+      - 'backtest/upbit_9am_followup_analysis.py'
       - '.github/workflows/upbit-9am-top5-profile.yml'
 
 jobs:
@@ -24,6 +25,8 @@ jobs:
         run: python backtest/upbit_9am_scanner.py
       - name: Enrich top5
         run: python backtest/upbit_9am_top5_enrich.py
+      - name: Run follow-up analysis
+        run: python backtest/upbit_9am_followup_analysis.py
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
