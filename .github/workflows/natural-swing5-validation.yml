@@ -1,0 +1,37 @@
+name: Natural SWING5 Validation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/natural_prevalence_swing5.py'
+      - '.github/workflows/natural-swing5-validation.yml'
+
+concurrency:
+  group: daonfutures-natural-swing5-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run natural-prevalence SWING5 validation
+        run: python backtest/natural_prevalence_swing5.py
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daonfutures-natural-swing5-validation
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            natural_swing5_summary.csv
+            natural_swing5_monthly.csv
+            natural_swing5_trades.csv
