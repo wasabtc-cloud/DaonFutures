@@ -3,7 +3,6 @@ package com.daon.futures
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,68 +11,320 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.glance.appwidget.updateAll
 import androidx.work.*
-import com.daon.futures.widget.DaonWidget
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.*
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(NotificationChannel("signals", "매매 신호", NotificationManager.IMPORTANCE_HIGH))
-        val req = PeriodicWorkRequestBuilder<SignalWorker>(15, TimeUnit.MINUTES).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork("daon-signal", ExistingPeriodicWorkPolicy.UPDATE, req)
-        setContent { DaonApp() }
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(
+                NotificationChannel("signals", "캐치월드 기회 알림", NotificationManager.IMPORTANCE_HIGH)
+            )
+
+        val req = PeriodicWorkRequestBuilder<SignalWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+            ).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "catchworld-signal",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            req
+        )
+
+        setContent { CatchWorldApp() }
     }
 }
 
-private val Green = Color(0xFF19D38A); private val Red = Color(0xFFFF4D63); private val Blue = Color(0xFF35A7FF); private val Orange = Color(0xFFFFA000); private val Purple = Color(0xFFA875FF); private val Muted = Color(0xFF9BA6B5)
+private val Bg = Color(0xFF070B12)
+private val Surface = Color(0xFF111722)
+private val Surface2 = Color(0xFF171F2C)
+private val Accent = Color(0xFF7A6CFF)
+private val Green = Color(0xFF19D38A)
+private val Red = Color(0xFFFF5B6E)
+private val Amber = Color(0xFFFFB74D)
+private val Muted = Color(0xFF9BA6B5)
 
-@Composable fun DaonApp() {
-    val context = LocalContext.current; val prefs = remember { AppStore.prefs(context) }; val scope = rememberCoroutineScope()
-    var symbol by remember { mutableStateOf(prefs.getString("symbol", "BTCUSDT")!!) }; var sl by remember { mutableFloatStateOf(prefs.getFloat("sl", 1f)) }; var tp by remember { mutableFloatStateOf(prefs.getFloat("tp", 1.5f)) }; var lev by remember { mutableIntStateOf(prefs.getInt("lev", 3)) }; var notifications by remember { mutableStateOf(prefs.getBoolean("notifications", true)) }; var signal by remember { mutableStateOf<Signal?>(null) }; var price by remember { mutableDoubleStateOf(prefs.getString("last_price", null)?.replace(",", "")?.toDoubleOrNull() ?: 0.0) }; var loading by remember { mutableStateOf(false) }; var refreshToken by remember { mutableIntStateOf(0) }; var chartInterval by remember { mutableStateOf("15m") }; var chartCandles by remember { mutableStateOf<List<Candle>>(emptyList()) }; var chartLoading by remember { mutableStateOf(false) }; var chartError by remember { mutableStateOf<String?>(null) }; val history = remember(refreshToken) { AppStore.history(context) }
-    LaunchedEffect(symbol, chartInterval) { chartLoading = true; chartError = null; try { chartCandles = withContext(Dispatchers.IO) { BinanceApi.candles(symbol, chartInterval, 100) }; if (chartCandles.isNotEmpty()) price = chartCandles.last().close } catch (e: Exception) { chartError = e.message ?: "차트 로딩 오류" } finally { chartLoading = false } }
-    val closes = chartCandles.takeLast(60).map { it.close }; val e20 = emaSeries(closes, 20).lastOrNull(); val e50 = emaSeries(closes, 50).lastOrNull(); val rsi = if (closes.size > 14) rsiValue(closes) else null; val trend = when { e20 == null || e50 == null -> "대기"; e20 > e50 -> "상승"; else -> "하락" }
-    MaterialTheme(colorScheme = darkColorScheme(primary=Color(0xFF6C63FF), background=Color(0xFF070B12), surface=Color(0xFF111722), surfaceVariant=Color(0xFF171F2C))) {
-        LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().padding(horizontal=14.dp), contentPadding=PaddingValues(top=14.dp,bottom=28.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            item { Column(verticalArrangement=Arrangement.spacedBy(3.dp)) { Row(verticalAlignment=Alignment.CenterVertically) { Text("다온이 선물매매",fontSize=28.sp,fontWeight=FontWeight.ExtraBold); Spacer(Modifier.width(8.dp)); Text("v2.5",color=Color(0xFF8B7CFF),fontSize=24.sp,fontWeight=FontWeight.Bold) }; Text("실시간 차트 · EMA20/50 · RSI · One Candle Rule",color=Muted,fontSize=13.sp) } }
-            item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("BTCUSDT","ETHUSDT").forEach { s -> FilterChip(modifier=Modifier.weight(1f),selected=symbol==s,onClick={symbol=s;save(context,symbol,sl,tp,lev,notifications);refreshToken++},label={Text(s,fontWeight=FontWeight.Bold)}) } } }
-            item { DashboardSummary(price,trend,e20,e50,rsi) }
-            item { Card(shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFF101722))) { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)) { listOf("5m" to "5분","15m" to "15분","1h" to "1시간","4h" to "4시간").forEach { (key,label) -> FilterChip(modifier=Modifier.weight(1f),selected=chartInterval==key,onClick={chartInterval=key},label={Text(label)}) } }; when { chartLoading -> LinearProgressIndicator(Modifier.fillMaxWidth()); chartError != null -> Text("차트 불러오기 실패: $chartError",color=Red,fontSize=12.sp); else -> MarketChartCard(symbol,when(chartInterval){"5m"->"5분";"1h"->"1시간";"4h"->"4시간";else->"15분"},chartCandles) } } } }
-            item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) { MetricCard("EMA20",e20?.let{fmt(it)}?:"-",Blue,Modifier.weight(1f)); MetricCard("EMA50",e50?.let{fmt(it)}?:"-",Orange,Modifier.weight(1f)); MetricCard("RSI",rsi?.let{String.format(Locale.KOREA,"%.1f",it)}?:"-",Purple,Modifier.weight(1f)) } }
-            item { SignalCard(signal,trend,loading) { scope.launch { loading=true; save(context,symbol,sl,tp,lev,notifications); try { price=withContext(Dispatchers.IO){BinanceApi.price(symbol)}; signal=withContext(Dispatchers.IO){BinanceApi.analyze(symbol,sl.toDouble(),tp.toDouble())}; chartCandles=withContext(Dispatchers.IO){BinanceApi.candles(symbol,chartInterval,100)}; val e=prefs.edit().putString("last_symbol",symbol).putString("last_price",fmt(price)).putString("last_updated",fmtDate(System.currentTimeMillis())); signal?.let { e.putString("last_side",it.side).putString("last_sl",fmt(it.sl)).putString("last_tp",fmt(it.tp)).putString("last_rsi",String.format(Locale.US,"%.1f",it.rsi)).putString("last_reason",it.reason).putLong("last_candle",it.candleTime); AppStore.addHistory(context,it,symbol) } ?: run { e.putString("last_side","WAIT").putString("last_sl","-").putString("last_tp","-").putString("last_rsi","-") }; e.apply(); DaonWidget().updateAll(context); refreshToken++ } finally { loading=false } } } }
-            item { SettingsCard(sl,tp,lev,notifications,{sl=it},{tp=it},{lev=it;save(context,symbol,sl,tp,lev,notifications)},{notifications=it;save(context,symbol,sl,tp,lev,notifications)},{save(context,symbol,sl,tp,lev,notifications)}) }
-            item { Text("최근 신호 기록",fontSize=20.sp,fontWeight=FontWeight.Bold) }
-            if(history.isEmpty()) item { Text("아직 신호 기록이 없습니다.",color=Muted) } else items(history) { r -> Card(shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp)) { Text("${r.symbol}  ${if(r.side=="LONG")"▲ LONG" else "▼ SHORT"}",color=if(r.side=="LONG")Green else Red,fontWeight=FontWeight.Bold); Text("진입 ${fmt(r.price)} · SL ${fmt(r.sl)} · TP ${fmt(r.tp)}"); Text("RSI ${String.format(Locale.KOREA,"%.1f",r.rsi)} · ${fmtDate(r.timestamp)}",fontSize=12.sp,color=Muted) } } }
-            item { val risk=AppStore.riskStatus(context); Card(shape=RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) { Text("매매 안전장치",fontWeight=FontWeight.Bold,fontSize=18.sp); Text("오늘 순손익 ${risk.pnl.toLocaleWon()} · 연속손실 ${risk.consecutiveLosses}/2"); Text(if(risk.locked)"오늘 매매 종료 — 안전장치 작동" else "거래 가능 · 1회 -5,000원 권장 / 하루 -20,000원 제한",color=if(risk.locked)Red else Green,fontWeight=FontWeight.Bold,fontSize=13.sp); Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) { OutlinedButton(onClick={AppStore.recordResult(context,false,5000);refreshToken++}){Text("-5천")}; OutlinedButton(onClick={AppStore.recordResult(context,true,5000);refreshToken++}){Text("+5천")}; OutlinedButton(onClick={AppStore.resetRisk(context);refreshToken++}){Text("초기화")} } } } }
-            item { Text("※ LONG/SHORT 표시는 후보 신호입니다. 자동 주문 기능이 아니며 실제 주문은 거래소에서 직접 확인해야 합니다.",color=Muted,fontSize=11.sp) }
+private data class RadarModule(
+    val name: String,
+    val subtitle: String,
+    val state: String,
+    val detail: String
+)
+
+@Composable
+fun CatchWorldApp() {
+    var tab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("홈", "레이더", "차트", "자산", "알림")
+
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Accent,
+            background = Bg,
+            surface = Surface,
+            surfaceVariant = Surface2
+        )
+    ) {
+        Scaffold(
+            containerColor = Bg,
+            bottomBar = {
+                NavigationBar(containerColor = Color(0xFF0C111A)) {
+                    tabs.forEachIndexed { index, title ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = { Text(listOf("⌂", "◎", "⌁", "◆", "◉")[index], fontSize = 18.sp) },
+                            label = { Text(title) }
+                        )
+                    }
+                }
+            }
+        ) { pad ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(pad)
+                    .background(Bg)
+            ) {
+                when (tab) {
+                    0 -> HomeScreen()
+                    1 -> RadarScreen()
+                    2 -> ChartScreen()
+                    3 -> AssetScreen()
+                    else -> AlertScreen()
+                }
+            }
         }
     }
 }
 
-@Composable private fun DashboardSummary(price:Double,trend:String,ema20:Double?,ema50:Double?,rsi:Double?) { Card(shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFF111927))) { Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) { Text("현재가",color=Muted,fontSize=12.sp); Text(if(price>0)fmt(price) else "-",color=Green,fontSize=34.sp,fontWeight=FontWeight.ExtraBold); HorizontalDivider(color=Color(0xFF273142)); Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Column{Text("현재 추세",color=Muted,fontSize=12.sp);Text(when(trend){"상승"->"↑ 상승";"하락"->"↓ 하락";else->"— 대기"},color=if(trend=="상승")Green else if(trend=="하락")Red else Muted,fontWeight=FontWeight.Bold)}; Column(horizontalAlignment=Alignment.End){Text("EMA 간격",color=Muted,fontSize=12.sp);Text(if(ema20!=null&&ema50!=null)fmt(ema20-ema50) else "-",fontWeight=FontWeight.Bold)}; Column(horizontalAlignment=Alignment.End){Text("RSI",color=Muted,fontSize=12.sp);Text(rsi?.let{String.format(Locale.KOREA,"%.1f",it)}?:"-",color=Purple,fontWeight=FontWeight.Bold)} } } } }
-@Composable private fun MetricCard(title:String,value:String,color:Color,modifier:Modifier=Modifier){Card(modifier=modifier,shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFF121A27))){Column(Modifier.padding(12.dp)){Text(title,color=Muted,fontSize=11.sp);Text(value,color=color,fontWeight=FontWeight.Bold,fontSize=13.sp)}}}
-@Composable private fun SignalCard(signal:Signal?,trend:String,loading:Boolean,onAnalyze:()->Unit){val side=signal?.side?:"WAIT";val color=when(side){"LONG"->Green;"SHORT"->Red;else->Muted};Card(shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFF111927))){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("현재 신호",color=Muted,fontSize=12.sp);Text(when(side){"LONG"->"▲ LONG";"SHORT"->"▼ SHORT";else->"● 대기"},color=color,fontSize=28.sp,fontWeight=FontWeight.ExtraBold);Text(if(side=="WAIT")"$trend 추세 확인 중" else signal?.reason?:"",color=Muted,fontSize=12.sp)};Button(enabled=!loading,onClick=onAnalyze){Text(if(loading)"분석 중…" else "지금 분석")}};signal?.let{HorizontalDivider(color=Color(0xFF273142));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("진입 ${fmt(it.price)}");Text("SL ${fmt(it.sl)}",color=Red);Text("TP ${fmt(it.tp)}",color=Green)}}}}}
-@Composable private fun SettingsCard(sl:Float,tp:Float,lev:Int,notifications:Boolean,onSl:(Float)->Unit,onTp:(Float)->Unit,onLev:(Int)->Unit,onNotifications:(Boolean)->Unit,onSave:()->Unit){Card(shape=RoundedCornerShape(20.dp)){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("매매 설정",fontWeight=FontWeight.Bold,fontSize=18.sp);Text("손절 ${String.format(Locale.KOREA,"%.1f",sl)}% · 익절 ${String.format(Locale.KOREA,"%.1f",tp)}% · 레버리지 ${lev}배",color=Muted);Text("손절",fontSize=12.sp);Slider(value=sl,onValueChange=onSl,valueRange=0.5f..3f,steps=5,onValueChangeFinished=onSave);Text("익절",fontSize=12.sp);Slider(value=tp,onValueChange=onTp,valueRange=0.5f..5f,steps=9,onValueChangeFinished=onSave);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf(1,2,3).forEach{i->FilterChip(selected=lev==i,onClick={onLev(i)},label={Text("${i}배")})}};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("푸시 알림",fontWeight=FontWeight.Bold);Text("신호 발생 시 알림",fontSize=11.sp,color=Muted)};Switch(checked=notifications,onCheckedChange=onNotifications)}}}}
-fun save(c:Context,symbol:String,sl:Float,tp:Float,lev:Int,notifications:Boolean)=AppStore.saveSettings(c,symbol,sl,tp,lev,notifications)
-fun fmt(v:Double)=String.format(Locale.KOREA,"%,.2f",v)
-fun fmtDate(v:Long)=SimpleDateFormat("MM/dd HH:mm",Locale.KOREA).format(Date(v))
-private fun Int.toLocaleWon():String=String.format(Locale.KOREA,"%+,d원",this)
+@Composable
+private fun Header(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(title, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+            Spacer(Modifier.width(8.dp))
+            Text("v2.6", color = Accent, fontWeight = FontWeight.Bold)
+        }
+        Text(subtitle, color = Muted, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun HomeScreen() {
+    LazyColumn(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { Header("캐치월드", "지금 돈이 어디로 들어가고 있는지 찾는 금융 레이더") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MarketChip("BTC", "연결 대기", Modifier.weight(1f))
+                MarketChip("금", "자산탭", Modifier.weight(1f))
+                MarketChip("ETF", "자산탭", Modifier.weight(1f))
+                MarketChip("예금", "비교 예정", Modifier.weight(1f))
+            }
+        }
+        item { SectionTitle("오늘의 기회") }
+        item { OpportunityCard("🔥 급등 가능성 TOP 3", "9AM · Daily Surge 결과 연결 대기", "연구중", Amber) }
+        item { OpportunityCard("💰 자금유입 감지", "Accumulation 결과를 이 카드에 연결", "연구중", Green) }
+        item { OpportunityCard("⏰ 09:00 후보", "08:55 예측 → 09:00 확인 구조", "분석중", Accent) }
+        item { OpportunityCard("🧠 패턴 레이더", "Wonyotti-inspired 패턴 유사도 기반", "백테스트중", Color(0xFF55C2FF)) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("신호 상태 흐름", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("관심 → 자금유입 → PRE-BLUE → BLUE → GREEN", color = Muted)
+                    Text("검증 완료 전략만 실제 알림 대상으로 승격", color = Green, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RadarScreen() {
+    val modules = listOf(
+        RadarModule("9AM", "08:30~09:00 급등 후보 탐지", "분석중", "TOP5 프로파일 연구 연결 예정"),
+        RadarModule("Daily Surge", "일중 +5~20% 급등 조기 탐지", "연구완료", "결과 파일 연결 단계"),
+        RadarModule("Accumulation", "가격보다 먼저 들어오는 거래대금 탐지", "연구완료", "누적 자금유입 상태 표시 예정"),
+        RadarModule("Wonyotti", "캔들+거래량 유사 패턴 탐색", "백테스트중", "Upbit BTC/KRW 버전 실행 중"),
+        RadarModule("SWING10", "구조적 손절선 기준", "보류", "단독 성능 부족 · 진입필터 필요")
+    )
+
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { Header("레이더", "전략별 상태와 근거를 한 화면에서 확인") }
+        modules.forEach { m ->
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(m.name, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                            StatusBadge(m.state)
+                        }
+                        Text(m.subtitle, color = Muted)
+                        HorizontalDivider(color = Color(0xFF273142))
+                        Text(m.detail, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartScreen() {
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { Header("차트", "가격보다 먼저 움직이는 자금 흐름을 표시할 영역") }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("BTC / KRW", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                    Box(
+                        Modifier.fillMaxWidth().height(220.dp).background(Surface2, RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("실시간 차트 + 자금유입 마커 연결 예정", color = Muted)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("5분", "15분", "1시간", "4시간").forEach { AssistChip(onClick = {}, label = { Text(it) }) }
+                    }
+                }
+            }
+        }
+        item { OpportunityCard("표시 예정", "PRE-BLUE · BLUE · GREEN · 매수/매도 대기 위치", "UI 준비", Accent) }
+    }
+}
+
+@Composable
+private fun AssetScreen() {
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { Header("자산", "코인뿐 아니라 금·ETF·예금까지 한곳에서 비교") }
+        item { AssetCard("금", "국내/국제 금 시세 · 변동성 · 매수 관심구간") }
+        item { AssetCard("ETF", "관심 ETF 수익률 · 변동성 · 자금유입") }
+        item { AssetCard("예금·적금", "금리 비교 · 만기 · 실수령액") }
+        item { AssetCard("자산금고", "보유자산을 한 화면에서 관리하는 영역") }
+    }
+}
+
+@Composable
+private fun AlertScreen() {
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item { Header("알림", "대기 → 매수 → 매도까지 이유가 보이는 알림") }
+        item { AlertCard("대기", "자금유입 증가 감지", "가격은 아직 크게 움직이지 않음") }
+        item { AlertCard("PRE-BLUE", "거래대금 재가속", "조건 일부 충족 · 진입 아님") }
+        item { AlertCard("BLUE", "후보 신호 확인", "GREEN 조건 대기") }
+        item { AlertCard("GREEN", "검증된 전략에서만 알림", "자동주문이 아닌 사용자 확인용") }
+    }
+}
+
+@Composable
+private fun MarketChip(title: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.padding(10.dp)) {
+            Text(title, fontWeight = FontWeight.Bold)
+            Text(value, color = Muted, fontSize = 10.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun OpportunityCard(title: String, body: String, state: String, accent: Color) {
+    Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(body, color = Muted, fontSize = 13.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Surface(color = accent.copy(alpha = .15f), shape = RoundedCornerShape(50)) {
+                Text(state, color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssetCard(title: String, body: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            Text(body, color = Muted, fontSize = 13.sp)
+            Text("데이터 연결 준비", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun AlertCard(state: String, title: String, detail: String) {
+    val c = when (state) {
+        "GREEN" -> Green
+        "BLUE" -> Color(0xFF55C2FF)
+        "PRE-BLUE" -> Accent
+        else -> Amber
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = Surface), shape = RoundedCornerShape(18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(color = c.copy(alpha = .15f), shape = RoundedCornerShape(12.dp)) {
+                Text(state, color = c, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+            }
+            Column {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(detail, color = Muted, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+}
+
+@Composable
+private fun StatusBadge(state: String) {
+    val c = when (state) {
+        "연구완료" -> Green
+        "보류" -> Red
+        "백테스트중", "분석중" -> Amber
+        else -> Muted
+    }
+    Surface(color = c.copy(alpha = .15f), shape = RoundedCornerShape(50)) {
+        Text(state, color = c, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+    }
+}
