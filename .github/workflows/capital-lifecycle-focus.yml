@@ -1,0 +1,30 @@
+name: Capital Lifecycle Focus Research
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/capital_lifecycle_focus.py'
+      - '.github/workflows/capital-lifecycle-focus.yml'
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run focused capital lifecycle research
+        run: python backtest/capital_lifecycle_focus.py
+      - name: Upload focused results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capital-lifecycle-focus
+          retention-days: 14
+          if-no-files-found: warn
+          path: results_capital_lifecycle/*.csv
