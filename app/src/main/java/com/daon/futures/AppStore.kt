@@ -10,8 +10,14 @@ import java.util.Locale
 object AppStore {
     private const val PREF="settings"
     private const val DAY_FMT="yyyy-MM-dd"
+    const val ALERT_NORMAL="alert_normal"
+    const val ALERT_ADDITIONAL="alert_additional"
+    const val ALERT_SUPER="alert_super"
+
     fun prefs(c:Context)=c.getSharedPreferences(PREF,0)
     fun saveSettings(c:Context,symbol:String,sl:Float,tp:Float,lev:Int,notifications:Boolean){prefs(c).edit().putString("symbol",symbol).putFloat("sl",sl).putFloat("tp",tp).putInt("lev",lev).putBoolean("notifications",notifications).apply()}
+    fun alertEnabled(c:Context,key:String)=prefs(c).getBoolean(key,true)
+    fun saveAlertSettings(c:Context,normal:Boolean,additional:Boolean,superSignal:Boolean){prefs(c).edit().putBoolean(ALERT_NORMAL,normal).putBoolean(ALERT_ADDITIONAL,additional).putBoolean(ALERT_SUPER,superSignal).apply()}
     fun addHistory(c:Context,s:Signal,symbol:String){val p=prefs(c);val old=JSONArray(p.getString("history","[]"));val out=JSONArray();val item=JSONObject().apply{put("symbol",symbol);put("side",s.side);put("price",s.price);put("sl",s.sl);put("tp",s.tp);put("rsi",s.rsi);put("timestamp",s.candleTime)};out.put(item);for(i in 0 until minOf(old.length(),19))out.put(old.getJSONObject(i));p.edit().putString("history",out.toString()).apply()}
     fun history(c:Context):List<SignalRecord>{val a=JSONArray(prefs(c).getString("history","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);SignalRecord(o.getString("symbol"),o.getString("side"),o.getDouble("price"),o.getDouble("sl"),o.getDouble("tp"),o.getDouble("rsi"),o.getLong("timestamp"))}}
     fun dayKey():String=SimpleDateFormat(DAY_FMT,Locale.KOREA).format(Date())
