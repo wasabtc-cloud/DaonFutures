@@ -13,13 +13,19 @@ class SignalWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         val prefs = AppStore.prefs(applicationContext)
         val market = prefs.getString("upbit_market", "KRW-BTC") ?: "KRW-BTC"
         val priorWhale = prefs.getBoolean("whale_$market", false)
-        val signal = CatchWorldCryptoScanner().scan(market, priorWhale)
+        val result = CatchWorldCryptoScanner().scan(market, priorWhale)
+        val signal = result.signal
+        val x = result.snapshot
 
         prefs.edit()
             .putString("catchworld_market", market)
             .putString("catchworld_state", signal.state.name)
             .putInt("catchworld_score", signal.score)
             .putString("catchworld_reason", signal.reason.joinToString(" · "))
+            .putString("catchworld_price", x.price.toString())
+            .putString("catchworld_vr1h", x.volumeRatio1h.toString())
+            .putString("catchworld_rsi", x.rsi14.toString())
+            .putString("catchworld_ret1h", x.return1h.toString())
             .putBoolean("whale_$market", priorWhale || signal.state != CatchWorldState.WATCH)
             .putLong("catchworld_updated", System.currentTimeMillis())
             .apply()
