@@ -6,14 +6,12 @@ data class CatchWorldScanResult(
     val signal: CatchWorldSignal
 )
 
-class CatchWorldCryptoScanner(
-    private val api: UpbitPublicApi = UpbitPublicApi()
-) {
+class CatchWorldCryptoScanner {
     suspend fun scan(
         market: String,
         priorWhaleSeen: Boolean = false
     ): CatchWorldScanResult {
-        val candles = api.minuteCandles(market = market, unit = 15, count = 200)
+        val candles = UpbitPublicApi.minuteCandles(market = market, unit = 15, count = 200)
         val snapshot = requireNotNull(
             CatchWorldIndicators.snapshot(
                 market = market,
