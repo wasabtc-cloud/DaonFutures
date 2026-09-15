@@ -1,0 +1,23 @@
+name: BLUE B Market Validation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/blue_b_market_validation.py'
+      - '.github/workflows/blue-b-market-validation.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas numpy requests
+      - run: python backtest/blue_b_market_validation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blue-b-market-validation
+          path: results_blue_b_market/
+          retention-days: 14
