@@ -1,12 +1,14 @@
 """Market-wide BLUE-B validation. Research only; no orders."""
-import time, requests, pandas as pd, numpy as np
+import os, time, requests, pandas as pd, numpy as np
 from pathlib import Path
+SHARD_INDEX=int(os.getenv('SHARD_INDEX','0')); SHARD_COUNT=int(os.getenv('SHARD_COUNT','1'))
 OUT=Path('results_blue_b_market'); OUT.mkdir(exist_ok=True)
 BASE='https://api.upbit.com/v1'
 
 def markets():
  r=requests.get(BASE+'/market/all',params={'is_details':'false'},timeout=20); r.raise_for_status()
- return [x['market'] for x in r.json() if x['market'].startswith('KRW-')]
+ all_markets=sorted(x['market'] for x in r.json() if x['market'].startswith('KRW-'))
+ return all_markets[SHARD_INDEX::SHARD_COUNT]
 
 def candles(m, unit=15, days=90):
  need=int(days*24*60/unit)+300; out=[]; to=None
@@ -23,14 +25,12 @@ def candles(m, unit=15, days=90):
  return x
 
 def calc(m,x):
- c=x.trade_price.astype(float); h=x.high_price.astype(float); l=x.low_price.astype(float); v=x.candle_acc_trade_price.astype(float)
+ c=x.trade_price.astype(float); v=x.candle_acc_trade_price.astype(float)
  ema20=c.ewm(span=20,adjust=False).mean(); ema60=c.ewm(span=60,adjust=False).mean()
  d=c.diff(); g=d.clip(lower=0).rolling(14).mean(); q=(-d.clip(upper=0)).rolling(14).mean(); rsi=100-100/(1+g/q.replace(0,np.nan))
  mid=c.rolling(20).mean(); bbw=4*c.rolling(20).std()/mid
- # 1h value vs 30d-ish baseline on 15m bars
  v1=v.rolling(4).sum(); base=v1.shift(4).rolling(4*24*30,min_periods=4*24*5).median(); vr=v1/base
  sig=(vr>=8)&(c>=ema20)&(ema20>=ema60*.995)&(rsi>=45)&(bbw<=.05)
- # de-dupe 6h; evaluate future 6h max/min
  idx=np.flatnonzero(sig.fillna(False).to_numpy()); keep=[]; last=-999
  for i in idx:
   if i-last>=24 and i+24<len(c): keep.append(i); last=i
@@ -42,13 +42,13 @@ def calc(m,x):
    'hit10':int(f.max()/c.iloc[i]-1>=.10),'hit20':int(f.max()/c.iloc[i]-1>=.20)})
  return rows
 
-rows=[]; ms=markets(); print('markets',len(ms))
+rows=[]; ms=markets(); print('shard',SHARD_INDEX,'of',SHARD_COUNT,'markets',len(ms),flush=True)
 for n,m in enumerate(ms,1):
  try:
-  x=candles(m); rows+=calc(m,x); print(n,m,'signals',sum(r['market']==m for r in rows))
- except Exception as e: print('skip',m,e)
-r=pd.DataFrame(rows); r.to_csv(OUT/'blue_b_market_signals.csv',index=False)
+  x=candles(m); found=calc(m,x); rows+=found; print(n,m,'signals',len(found),flush=True)
+ except Exception as e: print('skip',m,e,flush=True)
+r=pd.DataFrame(rows); r.to_csv(OUT/f'blue_b_market_signals_{SHARD_INDEX}.csv',index=False)
 if len(r):
- s=pd.DataFrame([{'markets':r.market.nunique(),'signals':len(r),'hit10':r.hit10.mean(),'hit20':r.hit20.mean(),'avg_mfe6h':r.mfe6h.mean(),'median_mfe6h':r.mfe6h.median(),'avg_mae6h':r.mae6h.mean()}])
- s.to_csv(OUT/'blue_b_market_summary.csv',index=False); print(s.to_string(index=False))
-else: print('no signals')
+ s=pd.DataFrame([{'shard':SHARD_INDEX,'markets':r.market.nunique(),'signals':len(r),'hit10':r.hit10.mean(),'hit20':r.hit20.mean(),'avg_mfe6h':r.mfe6h.mean(),'median_mfe6h':r.mfe6h.median(),'avg_mae6h':r.mae6h.mean()}])
+ s.to_csv(OUT/f'blue_b_market_summary_{SHARD_INDEX}.csv',index=False); print(s.to_string(index=False),flush=True)
+else: print('no signals',flush=True)
