@@ -3,8 +3,6 @@ package com.daon.futures
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,38 +10,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
-@Composable
-fun TradeJournalCard() {
-    val context = LocalContext.current
-    var memo by remember { mutableStateOf("") }
-    var records by remember { mutableStateOf(AppStore.journal(context)) }
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("메모 · 매매일지", fontWeight = FontWeight.ExtraBold)
-            OutlinedTextField(value = memo, onValueChange = { memo = it }, modifier = Modifier.fillMaxWidth(), label = { Text("지금 보는 신호/생각 기록") })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    if (memo.isNotBlank()) {
-                        AppStore.addJournal(context, memo.trim())
-                        memo = ""
-                        records = AppStore.journal(context)
-                    }
-                }) { Text("메모 저장") }
-                OutlinedButton(onClick = {
-                    val app = Intent(Intent.ACTION_VIEW, Uri.parse("upbit://"))
-                    val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://upbit.com/exchange?code=CRIX.UPBIT.KRW-BTC"))
-                    runCatching { context.startActivity(app) }.getOrElse { context.startActivity(web) }
-                }) { Text("업비트 바로가기") }
-            }
-            records.take(5).forEach { r ->
-                HorizontalDivider()
-                Text(SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date(r.time)), style = MaterialTheme.typography.labelSmall)
-                Text(r.memo, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
+@Composable fun TradeJournalCard(){val c=LocalContext.current;var memo by remember{mutableStateOf("")};var records by remember{mutableStateOf(AppStore.journal(c))};Card(shape=RoundedCornerShape(18.dp)){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("메모 · 매매일지",fontWeight=FontWeight.ExtraBold);OutlinedTextField(memo,{memo=it},Modifier.fillMaxWidth(),label={Text("지금 보는 신호/생각 기록")});Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Button(onClick={if(memo.isNotBlank()){AppStore.addJournal(c,memo.trim());memo="";records=AppStore.journal(c)}}){Text("메모 저장")};OutlinedButton(onClick={val app=Intent(Intent.ACTION_VIEW,Uri.parse("upbit://"));val web=Intent(Intent.ACTION_VIEW,Uri.parse("https://upbit.com/exchange?code=CRIX.UPBIT.KRW-BTC"));runCatching{c.startActivity(app)}.getOrElse{c.startActivity(web)}}){Text("업비트 바로가기")}};records.take(3).forEach{r->HorizontalDivider();Text(SimpleDateFormat("MM/dd HH:mm",Locale.KOREA).format(Date(r.time)),style=MaterialTheme.typography.labelSmall);Text(r.memo)}}}}
+
+@Composable fun InvestmentDashboardCard(){val c=LocalContext.current;var refresh by remember{mutableIntStateOf(0)};val p=remember(refresh){AppStore.monthlyPerformance(c)};val signals=remember(refresh){AppStore.signalPerformance(c)};var startText by remember{mutableStateOf(if(AppStore.startCapital(c)>0)AppStore.startCapital(c).toLong().toString() else "")};var market by remember{mutableStateOf("KRW-BTC")};var capital by remember{mutableStateOf("")};var pnl by remember{mutableStateOf("")};var signal by remember{mutableStateOf("✓")};var note by remember{mutableStateOf("")};val won=NumberFormat.getNumberInstance(Locale.KOREA)
+    Card(shape=RoundedCornerShape(18.dp)){Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text("이번 달 투자 대시보드",fontWeight=FontWeight.ExtraBold);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Metric("현재 투자자금",won.format(p.currentCapital.toLong())+"원",Modifier.weight(1f));Metric("누적손익",signedWon(p.pnl),Modifier.weight(1f))};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Metric("누적 수익률",String.format(Locale.KOREA,"%+.2f%%",p.returnPct),Modifier.weight(1f));Metric("승률",String.format(Locale.KOREA,"%.1f%% · %d/%d",p.winRate,p.wins,p.trades),Modifier.weight(1f))};Text("최대수익 ${signedWon(p.maxProfit)} (${pct(p.maxProfitPct)})  ·  최대손실 ${signedWon(p.maxLoss)} (${pct(p.maxLossPct)})",style=MaterialTheme.typography.bodySmall);Text("최대 연속손실 ${p.maxLossStreak}회  ·  월간 MDD ${pct(p.mddPct)}",style=MaterialTheme.typography.bodySmall);HorizontalDivider();Text("신호별 이번 달 성적",fontWeight=FontWeight.Bold);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){listOf("✓","✓✓","S").forEach{s->val v=signals[s]?: (0.0 to 0.0);Text("$s  ${signedWon(v.first)} / 승률 ${String.format(Locale.KOREA,"%.0f%%",v.second)}",style=MaterialTheme.typography.labelMedium)}};HorizontalDivider();Text("자금 · 거래 입력",fontWeight=FontWeight.Bold);OutlinedTextField(startText,{startText=it.filter(Char::isDigit)},Modifier.fillMaxWidth(),label={Text("월 시작 투자자금(원)")},singleLine=true);Button(onClick={startText.toDoubleOrNull()?.let{AppStore.setStartCapital(c,it);refresh++}}){Text("시작자금 저장")};Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(market,{market=it},Modifier.weight(1f),label={Text("코인")},singleLine=true);OutlinedTextField(capital,{capital=it.filter{ch->ch.isDigit()||ch=='.'}},Modifier.weight(1f),label={Text("투자금")},singleLine=true)};OutlinedTextField(pnl,{pnl=it.filter{ch->ch.isDigit()||ch=='.'||ch=='-'}},Modifier.fillMaxWidth(),label={Text("실현손익(손실은 -)")},singleLine=true);Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("✓","✓✓","S").forEach{s->FilterChip(selected=signal==s,onClick={signal=s},label={Text(s)})}};OutlinedTextField(note,{note=it},Modifier.fillMaxWidth(),label={Text("거래 메모")});Button(onClick={val cap=capital.toDoubleOrNull();val pl=pnl.toDoubleOrNull();if(cap!=null&&pl!=null){AppStore.addTrade(c,market,cap,pl,signal,note);capital="";pnl="";note="";refresh++}},modifier=Modifier.fillMaxWidth()){Text("거래 기록 저장")};val recent=remember(refresh){AppStore.trades(c).take(5)};if(recent.isNotEmpty()){HorizontalDivider();Text("최근 거래",fontWeight=FontWeight.Bold);recent.forEach{t->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("${t.market}  ${t.signal}");Text("${signedWon(t.pnl)}  ${pct(t.returnPct)}")}}}}}}
+
+@Composable private fun Metric(label:String,value:String,modifier:Modifier=Modifier){Surface(modifier=modifier,shape=RoundedCornerShape(12.dp),tonalElevation=2.dp){Column(Modifier.padding(10.dp)){Text(label,style=MaterialTheme.typography.labelSmall);Text(value,fontWeight=FontWeight.ExtraBold)}}}
+private fun signedWon(v:Double):String=String.format(Locale.KOREA,"%+,d원",v.toLong());private fun pct(v:Double)=String.format(Locale.KOREA,"%+.2f%%",v)
