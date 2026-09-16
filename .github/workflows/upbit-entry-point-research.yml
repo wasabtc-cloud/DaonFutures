@@ -1,0 +1,38 @@
+name: Upbit Entry Point Research
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Research days
+        required: false
+        default: '90'
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy requests
+      - name: Run exact-time entry research
+        env:
+          DAYS: ${{ inputs.days || '90' }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: '4'
+        run: python backtest/upbit_entry_point_research.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catchworld-entry-research-${{ matrix.shard }}
+          path: |
+            entry_points_shard_${{ matrix.shard }}.csv
+            entry_events_shard_${{ matrix.shard }}.csv
+            entry_summary_shard_${{ matrix.shard }}.csv
+          if-no-files-found: warn
