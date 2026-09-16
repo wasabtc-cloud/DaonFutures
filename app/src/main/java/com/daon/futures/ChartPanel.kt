@@ -184,10 +184,19 @@ private fun CandlestickCanvas(candles: List<Candle>, e20: List<Double>, e50: Lis
             if (mark.level >= 2) drawCircle(markerColor.copy(alpha=.35f), radius = radius * 1.8f, center = Offset(x, markerY))
         }
         zone?.takeIf { it.confirmed }?.let { z ->
-            val entry=z.entry; val stop=z.stop; val target=z.target2R
-            if(entry!=null&&stop!=null&&target!=null){ val signalColor=if(z.side=="LONG")up else down; drawLine(signalColor,Offset(0f,y(entry)),Offset(plotWidth,y(entry)),1.8f); drawLine(down,Offset(0f,y(stop)),Offset(plotWidth,y(stop)),2.2f); drawLine(up,Offset(0f,y(target)),Offset(plotWidth,y(target)),2.2f); drawCircle(signalColor,8f,Offset(plotWidth-8f,y(entry))) }
+            val entry = z.entry
+            val stop = z.stop
+            val target = z.target2R
+            if (entry != null && stop != null && target != null) {
+                val signalColor = if (z.side == "LONG") up else down
+                drawLine(signalColor, Offset(0f, y(entry)), Offset(plotWidth, y(entry)), 1.8f)
+                drawLine(down, Offset(0f, y(stop)), Offset(plotWidth, y(stop)), 2.2f)
+                drawLine(up, Offset(0f, y(target)), Offset(plotWidth, y(target)), 2.2f)
+                drawCircle(signalColor, radius = 8f, center = Offset(plotWidth - 8f, y(entry)))
+            }
         }
-        val lastPriceY=y(candles.last().close); drawLine(Color.White.copy(alpha=.35f),Offset(0f,lastPriceY),Offset(plotWidth,lastPriceY),1.2f)
+        val lastPriceY = y(candles.last().close)
+        drawLine(Color.White.copy(alpha=.35f), Offset(0f,lastPriceY), Offset(plotWidth,lastPriceY), 1.2f)
     }
 }
 
