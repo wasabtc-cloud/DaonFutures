@@ -1,0 +1,27 @@
+name: CatchWorld Archetype3 Timeline
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download full-market Strategy B scout
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+      - name: Analyze 128 strong-flow episodes backwards
+        run: python backtest/catchworld_archetype3_timeline.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-archetype3-timeline
+          path: results/archetype3_timeline/
+          retention-days: 90
