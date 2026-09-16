@@ -1,0 +1,31 @@
+name: CatchWorld Pump Archetype Discovery
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download full-market Strategy B scout
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+          repository: wasabtc-cloud/DaonFutures
+      - name: Discover archetypes without preset pattern count
+        run: python backtest/catchworld_pump_archetypes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-pump-archetypes
+          path: results/pump_archetypes/
+          retention-days: 90
