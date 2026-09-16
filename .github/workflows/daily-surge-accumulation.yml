@@ -9,8 +9,17 @@ on:
 
 jobs:
   research:
+    name: research-shard-${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD: ${{ matrix.shard }}
+      SHARDS: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,17 +27,13 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: pip install pandas numpy requests
-      - name: Run Daily Surge + Accumulation research
+      - name: Run shard ${{ matrix.shard }}
         run: python backtest/upbit_daily_surge_accumulation.py
-      - name: Upload research results
+      - name: Upload shard results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: daonfutures-daily-surge-accumulation
+          name: catchworld-surge-shard-${{ matrix.shard }}
           retention-days: 14
           if-no-files-found: warn
-          path: |
-            results_daily_surge/daily_surge_samples.csv
-            results_daily_surge/daily_surge_metrics.csv
-            results_daily_surge/daily_surge_top3_daily.csv
-            results_daily_surge/daily_surge_first_detection.csv
+          path: results_daily_surge/shard_${{ matrix.shard }}/
