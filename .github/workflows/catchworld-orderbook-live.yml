@@ -1,0 +1,27 @@
+name: Catch World Orderbook Live Pilot
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Collection minutes'
+        required: true
+        default: '60'
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests websockets
+      - name: Collect realtime Upbit orderbook
+        env:
+          MINUTES: ${{ inputs.minutes }}
+        run: python backtest/catchworld_orderbook_live_collector.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-orderbook-live-${{ inputs.minutes }}m
+          path: orderbook_live.csv
+          retention-days: 30
