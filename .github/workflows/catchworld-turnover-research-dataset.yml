@@ -1,0 +1,33 @@
+name: Catch World Turnover Research Dataset
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days to collect
+        required: true
+        default: '365'
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy requests
+      - name: Collect reusable turnover research data
+        env:
+          DAYS: ${{ inputs.days }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: '8'
+        run: python backtest/catchworld_turnover_research_dataset.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-turnover-${{ inputs.days }}d-${{ matrix.shard }}
+          path: turnover_research_shard_${{ matrix.shard }}.csv
+          retention-days: 90
