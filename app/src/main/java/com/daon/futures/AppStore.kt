@@ -13,11 +13,19 @@ object AppStore {
     const val ALERT_NORMAL="alert_normal"
     const val ALERT_ADDITIONAL="alert_additional"
     const val ALERT_SUPER="alert_super"
+    const val ALERT_SOUND="alert_sound"
+    const val ALERT_VIBRATE="alert_vibrate"
+    data class JournalRecord(val time:Long,val memo:String)
 
     fun prefs(c:Context)=c.getSharedPreferences(PREF,0)
     fun saveSettings(c:Context,symbol:String,sl:Float,tp:Float,lev:Int,notifications:Boolean){prefs(c).edit().putString("symbol",symbol).putFloat("sl",sl).putFloat("tp",tp).putInt("lev",lev).putBoolean("notifications",notifications).apply()}
     fun alertEnabled(c:Context,key:String)=prefs(c).getBoolean(key,true)
     fun saveAlertSettings(c:Context,normal:Boolean,additional:Boolean,superSignal:Boolean){prefs(c).edit().putBoolean(ALERT_NORMAL,normal).putBoolean(ALERT_ADDITIONAL,additional).putBoolean(ALERT_SUPER,superSignal).apply()}
+    fun soundEnabled(c:Context)=prefs(c).getBoolean(ALERT_SOUND,true)
+    fun vibrateEnabled(c:Context)=prefs(c).getBoolean(ALERT_VIBRATE,true)
+    fun saveAlertEffects(c:Context,sound:Boolean,vibrate:Boolean){prefs(c).edit().putBoolean(ALERT_SOUND,sound).putBoolean(ALERT_VIBRATE,vibrate).apply()}
+    fun addJournal(c:Context,memo:String){val p=prefs(c);val old=JSONArray(p.getString("journal","[]"));val out=JSONArray();out.put(JSONObject().apply{put("time",System.currentTimeMillis());put("memo",memo)});for(i in 0 until minOf(old.length(),49))out.put(old.getJSONObject(i));p.edit().putString("journal",out.toString()).apply()}
+    fun journal(c:Context):List<JournalRecord>{val a=JSONArray(prefs(c).getString("journal","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);JournalRecord(o.getLong("time"),o.getString("memo"))}}
     fun addHistory(c:Context,s:Signal,symbol:String){val p=prefs(c);val old=JSONArray(p.getString("history","[]"));val out=JSONArray();val item=JSONObject().apply{put("symbol",symbol);put("side",s.side);put("price",s.price);put("sl",s.sl);put("tp",s.tp);put("rsi",s.rsi);put("timestamp",s.candleTime)};out.put(item);for(i in 0 until minOf(old.length(),19))out.put(old.getJSONObject(i));p.edit().putString("history",out.toString()).apply()}
     fun history(c:Context):List<SignalRecord>{val a=JSONArray(prefs(c).getString("history","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);SignalRecord(o.getString("symbol"),o.getString("side"),o.getDouble("price"),o.getDouble("sl"),o.getDouble("tp"),o.getDouble("rsi"),o.getLong("timestamp"))}}
     fun dayKey():String=SimpleDateFormat(DAY_FMT,Locale.KOREA).format(Date())
