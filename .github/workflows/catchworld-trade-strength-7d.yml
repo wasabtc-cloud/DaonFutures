@@ -1,0 +1,32 @@
+name: Catch World 7d Trade Strength Pilot
+
+on:
+  workflow_dispatch:
+
+jobs:
+  collect:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas numpy requests
+      - name: Collect 7-day trades and 1m strength
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: '8'
+          SLEEP: '0.12'
+        run: python backtest/catchworld_trade_strength_7d.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-trade-strength-7d-${{ matrix.shard }}
+          path: |
+            trade_strength_7d_raw_shard_${{ matrix.shard }}.csv
+            trade_strength_7d_1m_shard_${{ matrix.shard }}.csv
+          retention-days: 30
