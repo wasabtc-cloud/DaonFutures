@@ -17,6 +17,7 @@ import androidx.glance.layout.*
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider as GlanceColorProvider
 import com.daon.futures.MainActivity
 
 class DaonWidget : GlanceAppWidget() {
@@ -43,17 +44,10 @@ class DaonWidget : GlanceAppWidget() {
             val gold = ColorProvider(Color(0xFFF3D36A), Color(0xFFF3D36A))
             val bg = ColorProvider(Color(0xFF0D1420), Color(0xFF0D1420))
             val accent = ColorProvider(Color(0xFF72A7FF), Color(0xFF72A7FF))
-            val tierText = when (tier) {
-                "SUPER" -> "S  강한 신호"
-                "ADDITIONAL" -> "✓✓  추가유입"
-                else -> "✓  자금유입"
-            }
+            val tierText = when (tier) { "SUPER" -> "S  강한 신호"; "ADDITIONAL" -> "✓✓  추가유입"; else -> "✓  자금유입" }
             val tierColor = when (tier) { "SUPER" -> gold; "ADDITIONAL" -> amber; else -> green }
 
-            Column(
-                GlanceModifier.fillMaxSize().background(bg).padding(14.dp)
-                    .clickable(actionStartActivity(open))
-            ) {
+            Column(GlanceModifier.fillMaxSize().background(bg).padding(14.dp).clickable(actionStartActivity(open))) {
                 Row(GlanceModifier.fillMaxWidth()) {
                     Column(GlanceModifier.defaultWeight()) {
                         Text("CATCH WORLD", style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 14.sp))
@@ -61,7 +55,6 @@ class DaonWidget : GlanceAppWidget() {
                     }
                     Text(updated, style = TextStyle(color = muted, fontSize = 9.sp))
                 }
-
                 Row(GlanceModifier.fillMaxWidth().padding(top = 10.dp)) {
                     Column(GlanceModifier.defaultWeight()) {
                         Text("$sym  ·  $exchange", style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 13.sp))
@@ -74,16 +67,14 @@ class DaonWidget : GlanceAppWidget() {
                         Text("3거래소 $cross", style = TextStyle(color = accent, fontSize = 10.sp))
                     }
                 }
-
                 Row(GlanceModifier.fillMaxWidth().padding(top = 12.dp)) {
-                    MiniAsset("금", goldValue, gold, white, muted, GlanceModifier.defaultWeight())
+                    MiniAsset("금", goldValue, gold, white, GlanceModifier.defaultWeight())
                     Spacer(GlanceModifier.width(6.dp))
-                    MiniAsset("환율", fxValue, accent, white, muted, GlanceModifier.defaultWeight())
+                    MiniAsset("환율", fxValue, accent, white, GlanceModifier.defaultWeight())
                     Spacer(GlanceModifier.width(6.dp))
-                    MiniAsset("예금", depositValue, green, white, muted, GlanceModifier.defaultWeight())
+                    MiniAsset("예금", depositValue, green, white, GlanceModifier.defaultWeight())
                 }
-
-                Text("코인을 누르면 상세 차트로 이동", modifier = GlanceModifier.padding(top = 10.dp), style = TextStyle(color = muted, fontSize = 9.sp))
+                Text("탭하여 캐치월드 열기", modifier = GlanceModifier.padding(top = 10.dp), style = TextStyle(color = muted, fontSize = 9.sp))
             }
         }
     }
@@ -91,8 +82,9 @@ class DaonWidget : GlanceAppWidget() {
 
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
-private fun MiniAsset(title: String, value: String, accent: ColorProvider, white: ColorProvider, muted: ColorProvider, modifier: GlanceModifier) {
-    Column(modifier.background(ColorProvider(Color(0xFF151F2D), Color(0xFF151F2D))).padding(8.dp)) {
+private fun MiniAsset(title: String, value: String, accent: GlanceColorProvider, white: GlanceColorProvider, modifier: GlanceModifier) {
+    val cardBg = ColorProvider(Color(0xFF151F2D), Color(0xFF151F2D))
+    Column(modifier.background(cardBg).padding(8.dp)) {
         Text(title, style = TextStyle(color = accent, fontWeight = FontWeight.Bold, fontSize = 10.sp))
         Text(value, style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 11.sp))
     }
