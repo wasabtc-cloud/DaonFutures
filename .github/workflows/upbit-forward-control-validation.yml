@@ -1,0 +1,35 @@
+name: Upbit Forward Control Validation
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Research days
+        required: false
+        default: '90'
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy requests
+      - name: Run forward-only control validation
+        env:
+          DAYS: ${{ inputs.days }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: '4'
+          ROUNDTRIP_COST: '0.0015'
+        run: python backtest/upbit_forward_control_validation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-forward-control-${{ matrix.shard }}
+          path: |
+            forward_control_shard_${{ matrix.shard }}.csv
+            forward_control_summary_shard_${{ matrix.shard }}.csv
