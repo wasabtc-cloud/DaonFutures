@@ -1,0 +1,27 @@
+name: CatchWorld Archetype3 Persistent Flow
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download full-market Strategy B scout
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+      - name: Test persistent pre-pump flow in archetype 3
+        run: python backtest/catchworld_archetype3_persistent_flow.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-archetype3-persistent-flow
+          path: results/archetype3_persistent_flow/
+          retention-days: 90
