@@ -1,0 +1,29 @@
+name: CatchWorld Archetype3 False Positive
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download full-market Strategy B scout
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+          repository: wasabtc-cloud/DaonFutures
+      - name: Validate false positives against matched controls
+        run: python backtest/catchworld_archetype3_false_positive.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-archetype3-false-positive
+          path: results/archetype3_false_positive/
+          retention-days: 90
