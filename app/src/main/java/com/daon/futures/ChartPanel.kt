@@ -174,7 +174,15 @@ private fun CandlestickCanvas(candles: List<Candle>, e20: List<Double>, e50: Lis
             drawLine(candleColor, Offset(x, y(candle.high)), Offset(x, y(candle.low)), 1.4f)
             drawRect(candleColor, Offset(x - body / 2f, min(openY, closeY)), Size(body, max(2f, abs(closeY - openY))))
         }
-        fun drawEma(series: List<Double>, color: Color) { if (series.size < 2) return; val path = Path(); series.forEachIndexed { i, value -> val p = Offset(step * i + step / 2f, y(value)); if (i == 0) path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y) }; drawPath(path, color, style = Stroke(width = 2.5f)) }
+        fun drawEma(series: List<Double>, color: Color) {
+            if (series.size < 2) return
+            val path = Path()
+            series.forEachIndexed { i, value ->
+                val p = Offset(step * i + step / 2f, y(value))
+                if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            }
+            drawPath(path, color, style = Stroke(width = 2.5f))
+        }
         drawEma(e20, blue); drawEma(e50, orange)
         flowMarks.forEach { mark ->
             val c = candles[mark.index]; val x = step * mark.index + step / 2f; val markerY = (y(c.low) + 15f).coerceAtMost(size.height - 12f)
@@ -202,11 +210,25 @@ private fun CandlestickCanvas(candles: List<Candle>, e20: List<Double>, e50: Lis
 
 @Composable
 private fun RsiCanvas(closes: List<Double>) {
-    val purple=Color(0xFF8E6CFF); val guide=Color(0xFF565B66); val series=mutableListOf<Double>()
-    for(i in closes.indices) series += if(i<14) 50.0 else rsiValue(closes.take(i+1),14)
-    Canvas(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF090E16),RoundedCornerShape(10.dp))) {
-        fun y(v:Double):Float=((100.0-v)/100.0*size.height).toFloat(); drawLine(guide,Offset(0f,y(70.0)),Offset(size.width,y(70.0)),1f); drawLine(guide,Offset(0f,y(30.0)),Offset(size.width,y(30.0)),1f)
-        if(series.size>1){ val step=size.width/series.size; val path=Path(); series.forEachIndexed{i,value->val p=Offset(step*i+step/2f,y(value));if(i==0)path.moveTo(p.x,p.y)else path.lineTo(p.x,p.y)};drawPath(path,purple,style=Stroke(width=2.4f)) }
+    val purple = Color(0xFF8E6CFF)
+    val guide = Color(0xFF565B66)
+    val series = mutableListOf<Double>()
+    for (i in closes.indices) {
+        series += if (i < 14) 50.0 else rsiValue(closes.take(i + 1), 14)
+    }
+    Canvas(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF090E16), RoundedCornerShape(10.dp))) {
+        fun rsiY(v: Double): Float = ((100.0 - v) / 100.0 * size.height).toFloat()
+        drawLine(guide, Offset(0f, rsiY(70.0)), Offset(size.width, rsiY(70.0)), 1f)
+        drawLine(guide, Offset(0f, rsiY(30.0)), Offset(size.width, rsiY(30.0)), 1f)
+        if (series.size > 1) {
+            val step = size.width / series.size
+            val path = Path()
+            series.forEachIndexed { i, value ->
+                val p = Offset(step * i + step / 2f, rsiY(value))
+                if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            }
+            drawPath(path, purple, style = Stroke(width = 2.4f))
+        }
     }
 }
 
