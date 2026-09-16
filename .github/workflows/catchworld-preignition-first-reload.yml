@@ -1,0 +1,28 @@
+name: CatchWorld Pre-Ignition FIRST RELOAD
+on:
+  workflow_dispatch:
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+          repository: wasabtc-cloud/DaonFutures
+      - name: Pre-ignition FIRST RELOAD holdout
+        run: python backtest/catchworld_preignition_first_reload.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-preignition-first-reload
+          path: results/preignition_first_reload/
+          retention-days: 90
