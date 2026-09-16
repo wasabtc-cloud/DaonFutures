@@ -1,0 +1,27 @@
+name: CatchWorld Strategy B Trade Sim V3 PROVE
+on:
+  workflow_dispatch:
+jobs:
+  backtest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install pandas numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+          repository: wasabtc-cloud/DaonFutures
+      - name: Run V3 PROVE chronological backtest
+        run: python backtest/catchworld_strategy_b_trade_sim_v3_prove.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-strategy-b-trade-sim-v3-prove
+          path: results/strategy_b_trade_sim_v3_prove/
+          retention-days: 90
