@@ -1,0 +1,27 @@
+name: CatchWorld One Account Validation
+on:
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install pandas numpy
+      - name: Download 1y Flow Path artifacts
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          mkdir -p data/flow_path /tmp/cw
+          for id in 10455475833 10455192761 10455703240 10455781821 10454393861 10454297008 10455491741 10454657025; do
+            gh api repos/${{ github.repository }}/actions/artifacts/$id/zip > /tmp/cw/$id.zip
+            unzip -o /tmp/cw/$id.zip -d data/flow_path
+          done
+      - name: Run one-account validation
+        run: python backtest/catchworld_one_account_validation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-one-account-validation
+          path: results/one_account/
+          retention-days: 90
