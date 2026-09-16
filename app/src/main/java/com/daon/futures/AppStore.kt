@@ -4,34 +4,28 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 object AppStore {
-    private const val PREF="settings"
-    private const val DAY_FMT="yyyy-MM-dd"
-    const val ALERT_NORMAL="alert_normal"
-    const val ALERT_ADDITIONAL="alert_additional"
-    const val ALERT_SUPER="alert_super"
-    const val ALERT_SOUND="alert_sound"
-    const val ALERT_VIBRATE="alert_vibrate"
+    private const val PREF="settings"; private const val DAY_FMT="yyyy-MM-dd"
+    const val ALERT_NORMAL="alert_normal"; const val ALERT_ADDITIONAL="alert_additional"; const val ALERT_SUPER="alert_super"; const val ALERT_SOUND="alert_sound"; const val ALERT_VIBRATE="alert_vibrate"
     data class JournalRecord(val time:Long,val memo:String)
-
+    data class TradeRecord(val time:Long,val market:String,val capital:Double,val pnl:Double,val signal:String,val memo:String){val returnPct get()=if(capital>0)pnl/capital*100.0 else 0.0}
+    data class Performance(val startCapital:Double,val currentCapital:Double,val pnl:Double,val returnPct:Double,val trades:Int,val wins:Int,val losses:Int,val winRate:Double,val maxProfit:Double,val maxLoss:Double,val maxProfitPct:Double,val maxLossPct:Double,val maxLossStreak:Int,val mddPct:Double)
     fun prefs(c:Context)=c.getSharedPreferences(PREF,0)
     fun saveSettings(c:Context,symbol:String,sl:Float,tp:Float,lev:Int,notifications:Boolean){prefs(c).edit().putString("symbol",symbol).putFloat("sl",sl).putFloat("tp",tp).putInt("lev",lev).putBoolean("notifications",notifications).apply()}
-    fun alertEnabled(c:Context,key:String)=prefs(c).getBoolean(key,true)
-    fun saveAlertSettings(c:Context,normal:Boolean,additional:Boolean,superSignal:Boolean){prefs(c).edit().putBoolean(ALERT_NORMAL,normal).putBoolean(ALERT_ADDITIONAL,additional).putBoolean(ALERT_SUPER,superSignal).apply()}
-    fun soundEnabled(c:Context)=prefs(c).getBoolean(ALERT_SOUND,true)
-    fun vibrateEnabled(c:Context)=prefs(c).getBoolean(ALERT_VIBRATE,true)
-    fun saveAlertEffects(c:Context,sound:Boolean,vibrate:Boolean){prefs(c).edit().putBoolean(ALERT_SOUND,sound).putBoolean(ALERT_VIBRATE,vibrate).apply()}
+    fun alertEnabled(c:Context,key:String)=prefs(c).getBoolean(key,true); fun saveAlertSettings(c:Context,n:Boolean,a:Boolean,s:Boolean){prefs(c).edit().putBoolean(ALERT_NORMAL,n).putBoolean(ALERT_ADDITIONAL,a).putBoolean(ALERT_SUPER,s).apply()}
+    fun soundEnabled(c:Context)=prefs(c).getBoolean(ALERT_SOUND,true); fun vibrateEnabled(c:Context)=prefs(c).getBoolean(ALERT_VIBRATE,true); fun saveAlertEffects(c:Context,sound:Boolean,vibrate:Boolean){prefs(c).edit().putBoolean(ALERT_SOUND,sound).putBoolean(ALERT_VIBRATE,vibrate).apply()}
     fun addJournal(c:Context,memo:String){val p=prefs(c);val old=JSONArray(p.getString("journal","[]"));val out=JSONArray();out.put(JSONObject().apply{put("time",System.currentTimeMillis());put("memo",memo)});for(i in 0 until minOf(old.length(),49))out.put(old.getJSONObject(i));p.edit().putString("journal",out.toString()).apply()}
     fun journal(c:Context):List<JournalRecord>{val a=JSONArray(prefs(c).getString("journal","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);JournalRecord(o.getLong("time"),o.getString("memo"))}}
+    fun setStartCapital(c:Context,value:Double)=prefs(c).edit().putString("start_capital",value.toString()).apply(); fun startCapital(c:Context)=prefs(c).getString("start_capital","0")?.toDoubleOrNull()?:0.0
+    fun addTrade(c:Context,market:String,capital:Double,pnl:Double,signal:String,memo:String){val p=prefs(c);val old=JSONArray(p.getString("trades","[]"));val out=JSONArray();out.put(JSONObject().apply{put("time",System.currentTimeMillis());put("market",market);put("capital",capital);put("pnl",pnl);put("signal",signal);put("memo",memo)});for(i in 0 until minOf(old.length(),499))out.put(old.getJSONObject(i));p.edit().putString("trades",out.toString()).apply()}
+    fun trades(c:Context):List<TradeRecord>{val a=JSONArray(prefs(c).getString("trades","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);TradeRecord(o.getLong("time"),o.optString("market","KRW-BTC"),o.optDouble("capital",0.0),o.optDouble("pnl",0.0),o.optString("signal","✓"),o.optString("memo",""))}}
+    private fun monthStart():Long{val cal=Calendar.getInstance();cal.set(Calendar.DAY_OF_MONTH,1);cal.set(Calendar.HOUR_OF_DAY,0);cal.set(Calendar.MINUTE,0);cal.set(Calendar.SECOND,0);cal.set(Calendar.MILLISECOND,0);return cal.timeInMillis}
+    fun monthlyPerformance(c:Context):Performance{val all=trades(c).filter{it.time>=monthStart()}.sortedBy{it.time};val start=startCapital(c);val pnl=all.sumOf{it.pnl};val wins=all.count{it.pnl>0};val losses=all.count{it.pnl<0};var streak=0;var maxStreak=0;var equity=start;var peak=start;var mdd=0.0;all.forEach{t->if(t.pnl<0){streak++;maxStreak=maxOf(maxStreak,streak)}else if(t.pnl>0)streak=0;equity+=t.pnl;peak=maxOf(peak,equity);if(peak>0)mdd=minOf(mdd,(equity-peak)/peak*100.0)};val maxP=all.maxByOrNull{it.pnl};val maxL=all.minByOrNull{it.pnl};return Performance(start,start+pnl,pnl,if(start>0)pnl/start*100 else 0.0,all.size,wins,losses,if(all.isNotEmpty())wins*100.0/all.size else 0.0,maxP?.pnl?:0.0,maxL?.pnl?:0.0,maxP?.returnPct?:0.0,maxL?.returnPct?:0.0,maxStreak,mdd)}
+    fun signalPerformance(c:Context):Map<String,Pair<Double,Double>> = listOf("✓","✓✓","S").associateWith{s->val x=trades(c).filter{it.time>=monthStart()&&it.signal==s};x.sumOf{it.pnl} to if(x.isNotEmpty())x.count{it.pnl>0}*100.0/x.size else 0.0}
     fun addHistory(c:Context,s:Signal,symbol:String){val p=prefs(c);val old=JSONArray(p.getString("history","[]"));val out=JSONArray();val item=JSONObject().apply{put("symbol",symbol);put("side",s.side);put("price",s.price);put("sl",s.sl);put("tp",s.tp);put("rsi",s.rsi);put("timestamp",s.candleTime)};out.put(item);for(i in 0 until minOf(old.length(),19))out.put(old.getJSONObject(i));p.edit().putString("history",out.toString()).apply()}
     fun history(c:Context):List<SignalRecord>{val a=JSONArray(prefs(c).getString("history","[]"));return (0 until a.length()).map{val o=a.getJSONObject(it);SignalRecord(o.getString("symbol"),o.getString("side"),o.getDouble("price"),o.getDouble("sl"),o.getDouble("tp"),o.getDouble("rsi"),o.getLong("timestamp"))}}
-    fun dayKey():String=SimpleDateFormat(DAY_FMT,Locale.KOREA).format(Date())
-    private fun ensureDay(c:Context){val p=prefs(c);val key=dayKey();if(p.getString("risk_day","")!=key){p.edit().putString("risk_day",key).putInt("daily_pnl",0).putInt("consecutive_losses",0).putBoolean("daily_locked",false).apply()}}
-    data class RiskStatus(val pnl:Int,val consecutiveLosses:Int,val locked:Boolean)
-    fun riskStatus(c:Context):RiskStatus{ensureDay(c);val p=prefs(c);return RiskStatus(p.getInt("daily_pnl",0),p.getInt("consecutive_losses",0),p.getBoolean("daily_locked",false))}
-    fun recordResult(c:Context,won:Boolean,amountWonOrLost:Int,maxDailyLoss:Int=20000,lossStreakLimit:Int=2):RiskStatus{ensureDay(c);val p=prefs(c);val signed=if(won)kotlin.math.abs(amountWonOrLost) else -kotlin.math.abs(amountWonOrLost);val pnl=p.getInt("daily_pnl",0)+signed;val streak=if(won)0 else p.getInt("consecutive_losses",0)+1;val locked=pnl<=-maxDailyLoss || streak>=lossStreakLimit;p.edit().putInt("daily_pnl",pnl).putInt("consecutive_losses",streak).putBoolean("daily_locked",locked).apply();return RiskStatus(pnl,streak,locked)}
-    fun resetRisk(c:Context){ensureDay(c);prefs(c).edit().putInt("daily_pnl",0).putInt("consecutive_losses",0).putBoolean("daily_locked",false).apply()}
+    fun dayKey():String=SimpleDateFormat(DAY_FMT,Locale.KOREA).format(Date());private fun ensureDay(c:Context){val p=prefs(c);val key=dayKey();if(p.getString("risk_day","")!=key)p.edit().putString("risk_day",key).putInt("daily_pnl",0).putInt("consecutive_losses",0).putBoolean("daily_locked",false).apply()};data class RiskStatus(val pnl:Int,val consecutiveLosses:Int,val locked:Boolean)
+    fun riskStatus(c:Context):RiskStatus{ensureDay(c);val p=prefs(c);return RiskStatus(p.getInt("daily_pnl",0),p.getInt("consecutive_losses",0),p.getBoolean("daily_locked",false))};fun recordResult(c:Context,won:Boolean,amountWonOrLost:Int,maxDailyLoss:Int=20000,lossStreakLimit:Int=2):RiskStatus{ensureDay(c);val p=prefs(c);val signed=if(won)kotlin.math.abs(amountWonOrLost) else -kotlin.math.abs(amountWonOrLost);val pnl=p.getInt("daily_pnl",0)+signed;val streak=if(won)0 else p.getInt("consecutive_losses",0)+1;val locked=pnl<=-maxDailyLoss||streak>=lossStreakLimit;p.edit().putInt("daily_pnl",pnl).putInt("consecutive_losses",streak).putBoolean("daily_locked",locked).apply();return RiskStatus(pnl,streak,locked)};fun resetRisk(c:Context){ensureDay(c);prefs(c).edit().putInt("daily_pnl",0).putInt("consecutive_losses",0).putBoolean("daily_locked",false).apply()}
 }
