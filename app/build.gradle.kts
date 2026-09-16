@@ -12,9 +12,15 @@ android {
         applicationId = "com.daon.futures"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "2.4"
+        versionCode = 29
+        versionName = "2.9"
+        val publicDataKey = System.getenv("PUBLIC_DATA_KEY") ?: ""
+        val finlifeKey = System.getenv("FINLIFE_KEY") ?: ""
+        buildConfigField("String", "PUBLIC_DATA_KEY", "\"$publicDataKey\"")
+        buildConfigField("String", "FINLIFE_KEY", "\"$finlifeKey\"")
     }
+
+    buildFeatures { buildConfig = true }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,9 +28,7 @@ android {
     }
 }
 
-kotlin {
-    jvmToolchain(17)
-}
+kotlin { jvmToolchain(17) }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
