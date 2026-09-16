@@ -1,0 +1,26 @@
+name: Catch World 7d Paper Recorder
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '5 * * * *'
+permissions:
+  contents: read
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - name: Record eligible signals for this hour
+        env:
+          RUN_MINUTES: '55'
+        run: python backtest/catchworld_7d_live_paper.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-7d-paper-${{ github.run_number }}
+          path: catchworld_7d_paper.csv
+          retention-days: 30
