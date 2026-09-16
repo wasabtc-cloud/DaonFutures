@@ -1,0 +1,27 @@
+name: CatchWorld Strategy B Analysis
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download Strategy B Scout artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+      - name: Analyze pre-pump patterns
+        run: python backtest/catchworld_strategy_b_analyze.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-strategy-b-analysis
+          path: results/strategy_b_analysis/
+          retention-days: 90
