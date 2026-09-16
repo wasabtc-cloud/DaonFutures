@@ -13,9 +13,96 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class SignalWorker(ctx:Context,params:WorkerParameters):CoroutineWorker(ctx,params){
- override suspend fun doWork():Result{return try{val p=AppStore.prefs(applicationContext);val risk=AppStore.riskStatus(applicationContext);if(risk.locked){DaonWidget().updateAll(applicationContext);Result.success()}else{val symbol=p.getString("symbol","BTCUSDT")!!;val sl=p.getFloat("sl",1f).toDouble();val tp=p.getFloat("tp",1.5f).toDouble();val livePrice=BinanceApi.price(symbol);val s=BinanceApi.analyze(symbol,sl,tp);val e=p.edit().putString("last_symbol",symbol).putString("last_price",fmt(livePrice)).putString("last_updated",fmtDate(System.currentTimeMillis()));if(s!=null){e.putString("last_side",s.side).putString("last_sl",fmt(s.sl)).putString("last_tp",fmt(s.tp)).putString("last_rsi",String.format(Locale.US,"%.1f",s.rsi)).putString("last_reason",s.reason).putLong("last_candle",s.candleTime);val signalKey="$symbol:${s.side}:${s.candleTime/900000L}";val notified=p.getString("last_notified_key","");if(notified!=signalKey){AppStore.addHistory(applicationContext,s,symbol);if(p.getBoolean("notifications",true))notifySignal(s,symbol);e.putString("last_notified_key",signalKey)}}else{e.putString("last_side","WAIT").putString("last_sl","-").putString("last_tp","-").putString("last_rsi","-")};e.apply();DaonWidget().updateAll(applicationContext);Result.success()}}catch(_:Exception){Result.retry()}}
- private fun notifySignal(s:Signal,symbol:String){val nm=applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)as NotificationManager;if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(NotificationChannel("signals","매매 신호",NotificationManager.IMPORTANCE_HIGH));val title=if(s.side=="LONG")"🟢 $symbol LONG 신호"else"🔴 $symbol SHORT 신호";val text="진입 ${fmt(s.price)} · SL ${fmt(s.sl)} · TP ${fmt(s.tp)} · RSI ${"%.1f".format(s.rsi)}";nm.notify((System.currentTimeMillis()%100000).toInt(),NotificationCompat.Builder(applicationContext,"signals").setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${s.reason}")).setAutoCancel(true).build())}
- private fun fmt(v:Double)=String.format(Locale.KOREA,"%,.2f",v)
- private fun fmtDate(v:Long)=SimpleDateFormat("MM/dd HH:mm",Locale.KOREA).format(Date(v))
+enum class AlertTier(val prefKey: String, val label: String) {
+    NORMAL(AppStore.ALERT_NORMAL, "자금유입"),
+    ADDITIONAL(AppStore.ALERT_ADDITIONAL, "추가 자금유입"),
+    SUPER(AppStore.ALERT_SUPER, "SUPER SIGNAL")
+}
+
+class SignalWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result = try {
+        val p = AppStore.prefs(applicationContext)
+        val risk = AppStore.riskStatus(applicationContext)
+        if (risk.locked) {
+            DaonWidget().updateAll(applicationContext)
+            Result.success()
+        } else {
+            val symbol = p.getString("symbol", "BTCUSDT")!!
+            val sl = p.getFloat("sl", 1f).toDouble()
+            val tp = p.getFloat("tp", 1.5f).toDouble()
+            val livePrice = BinanceApi.price(symbol)
+            val signal = BinanceApi.analyze(symbol, sl, tp)
+            val edit = p.edit()
+                .putString("last_symbol", symbol)
+                .putString("last_price", fmt(livePrice))
+                .putString("last_updated", fmtDate(System.currentTimeMillis()))
+
+            if (signal != null) {
+                edit.putString("last_side", signal.side)
+                    .putString("last_sl", fmt(signal.sl))
+                    .putString("last_tp", fmt(signal.tp))
+                    .putString("last_rsi", String.format(Locale.US, "%.1f", signal.rsi))
+                    .putString("last_reason", signal.reason)
+                    .putLong("last_candle", signal.candleTime)
+
+                // Until Upbit reverse-trace research fixes the thresholds, legacy signals
+                // enter through NORMAL only. ADDITIONAL/SUPER are ready but never guessed.
+                val tier = classifyTier(signal)
+                val signalKey = "$symbol:${signal.side}:${tier.name}:${signal.candleTime / 900000L}"
+                val notified = p.getString("last_notified_key", "")
+                if (notified != signalKey) {
+                    AppStore.addHistory(applicationContext, signal, symbol)
+                    if (p.getBoolean("notifications", true) && AppStore.alertEnabled(applicationContext, tier.prefKey)) {
+                        notifySignal(signal, symbol, tier)
+                    }
+                    edit.putString("last_notified_key", signalKey)
+                        .putString("last_alert_tier", tier.name)
+                }
+            } else {
+                edit.putString("last_side", "WAIT")
+                    .putString("last_sl", "-")
+                    .putString("last_tp", "-")
+                    .putString("last_rsi", "-")
+            }
+            edit.apply()
+            DaonWidget().updateAll(applicationContext)
+            Result.success()
+        }
+    } catch (_: Exception) {
+        Result.retry()
+    }
+
+    /**
+     * Placeholder routing only. Research-derived capital-flow thresholds will replace
+     * this implementation. Keeping all current legacy signals NORMAL prevents an
+     * unvalidated ADDITIONAL or SUPER alert from being emitted.
+     */
+    private fun classifyTier(signal: Signal): AlertTier = AlertTier.NORMAL
+
+    private fun notifySignal(signal: Signal, symbol: String, tier: AlertTier) {
+        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(NotificationChannel("signals", "캐치월드 기회 알림", NotificationManager.IMPORTANCE_HIGH))
+        }
+        val direction = if (signal.side == "LONG") "🟢 LONG" else "🔴 SHORT"
+        val title = when (tier) {
+            AlertTier.NORMAL -> "✓ $symbol ${tier.label} · $direction"
+            AlertTier.ADDITIONAL -> "✓✓ $symbol ${tier.label} · $direction"
+            AlertTier.SUPER -> "S $symbol ${tier.label} · $direction"
+        }
+        val text = "진입 ${fmt(signal.price)} · SL ${fmt(signal.sl)} · TP ${fmt(signal.tp)} · RSI ${String.format(Locale.KOREA, "%.1f", signal.rsi)}"
+        nm.notify(
+            (System.currentTimeMillis() % 100000).toInt(),
+            NotificationCompat.Builder(applicationContext, "signals")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${signal.reason}"))
+                .setAutoCancel(true)
+                .build()
+        )
+    }
+
+    private fun fmt(v: Double) = String.format(Locale.KOREA, "%,.2f", v)
+    private fun fmtDate(v: Long) = SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date(v))
 }
