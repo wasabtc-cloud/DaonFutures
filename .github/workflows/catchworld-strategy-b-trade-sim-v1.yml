@@ -18,10 +18,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: 35128138456
           repository: wasabtc-cloud/DaonFutures
-      - name: Run chronological one-account trade simulation
-        run: python backtest/catchworld_strategy_b_trade_sim_v1.py
+      - name: Run V3 PROVE chronological backtest
+        run: python backtest/catchworld_strategy_b_trade_sim_v3_prove.py
       - uses: actions/upload-artifact@v4
         with:
-          name: catchworld-strategy-b-trade-sim-v1
-          path: results/strategy_b_trade_sim_v1/
+          name: catchworld-strategy-b-trade-sim-v3-prove
+          path: results/strategy_b_trade_sim_v3_prove/
           retention-days: 90
