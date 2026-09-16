@@ -26,7 +26,7 @@ fun CoinDetailScreen(symbol:String="BTCUSDT") {
             else Pair(GlobalExchangeApi.binanceQuote(symbol),GlobalExchangeApi.binanceCandles(symbol,intervalCode))
         }
         quote=result.first
-        candles=result.second.map{ Candle(it.time,it.open,it.high,it.low,it.close,it.volume) }
+        candles=result.second.map { Candle(open=it.open, high=it.high, low=it.low, close=it.close, closeTime=it.time) }
         loading=false
     }
 
