@@ -18,10 +18,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: 35128138456
           repository: wasabtc-cloud/DaonFutures
-      - name: Run V4 PRE-BUY PROVE chronological backtest
-        run: python backtest/catchworld_strategy_b_trade_sim_v4_preprove.py
+      - name: Run 30-day pre-pump reverse event study
+        run: python backtest/catchworld_pre_pump_30d_reverse_study.py
       - uses: actions/upload-artifact@v4
         with:
-          name: catchworld-strategy-b-trade-sim-v4-preprove
-          path: results/strategy_b_trade_sim_v4_preprove/
+          name: catchworld-pre-pump-30d-reverse-study
+          path: results/pre_pump_30d_reverse/
           retention-days: 90
