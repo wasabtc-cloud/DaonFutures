@@ -47,7 +47,7 @@ class SignalWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
                 // Until Upbit reverse-trace research fixes the thresholds, legacy signals
                 // enter through NORMAL only. ADDITIONAL/SUPER are ready but never guessed.
-                val tier = classifyTier(signal)
+                val tier = classifyTier()
                 val signalKey = "$symbol:${signal.side}:${tier.name}:${signal.candleTime / 900000L}"
                 val notified = p.getString("last_notified_key", "")
                 if (notified != signalKey) {
@@ -72,12 +72,7 @@ class SignalWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         Result.retry()
     }
 
-    /**
-     * Placeholder routing only. Research-derived capital-flow thresholds will replace
-     * this implementation. Keeping all current legacy signals NORMAL prevents an
-     * unvalidated ADDITIONAL or SUPER alert from being emitted.
-     */
-    private fun classifyTier(signal: Signal): AlertTier = AlertTier.NORMAL
+    private fun classifyTier(): AlertTier = AlertTier.NORMAL
 
     private fun notifySignal(signal: Signal, symbol: String, tier: AlertTier) {
         val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
