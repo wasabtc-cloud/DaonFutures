@@ -18,7 +18,13 @@ def main():
     d=d.dropna(subset=['market','entry_time','offset_min','price'])
     entries=d[d.offset_min.eq(0)].copy()
     entries['kst_hour']=(entries.entry_time+pd.Timedelta(hours=9)).dt.hour
-    entries=entries[(entries.flow>=10)&entries.ret30.between(-2.5,-2.0)&entries.kst_hour.between(6,8)]
+    print('DIAG entry_rows=',len(entries),'flow>=10=',int((entries.flow>=10).sum()),
+          'ret30_range=',float(entries.ret30.min()),float(entries.ret30.max()),flush=True)
+    # IMPORTANT: Flow Path stores ret30 as a decimal return (-0.025 == -2.5%), not percentage points.
+    entries=entries[(entries.flow>=10)&entries.ret30.between(-0.025,-0.020)&entries.kst_hour.between(6,8)]
+    print('DIAG selected_entries=',len(entries),flush=True)
+    if entries.empty:
+        raise RuntimeError('No candidates after filters; inspect DIAG values before changing thresholds')
     keys=set(zip(entries.market,entries.entry_time.astype(str)))
     d['_key']=list(zip(d.market,d.entry_time.astype(str)))
     d=d[d._key.isin(keys)].copy()
@@ -41,6 +47,8 @@ def main():
             o[f'mfe_{h}m']=np.nan if z.empty else float(rr.max())
             o[f'mae_{h}m']=np.nan if z.empty else float(rr.min())
         rows.append(o)
+    if not rows:
+        raise RuntimeError('Candidates existed but no future paths were produced')
     ev=pd.DataFrame(rows).sort_values('entry_time')
     ev.to_csv(OUT/'events.csv',index=False)
     s={'events':len(ev),'mfe6h_mean':ev.mfe6h.mean(),'mae6h_mean':ev.mae6h.mean()}
