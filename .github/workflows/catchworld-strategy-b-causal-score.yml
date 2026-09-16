@@ -1,0 +1,27 @@
+name: CatchWorld Strategy B Causal Score
+on:
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pandas numpy
+      - name: Download Strategy B Scout artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+      - name: Validate causal app score
+        run: python backtest/catchworld_strategy_b_causal_score.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-strategy-b-causal-score
+          path: results/strategy_b_causal_score/
+          retention-days: 90
