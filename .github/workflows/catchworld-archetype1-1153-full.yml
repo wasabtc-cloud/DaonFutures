@@ -1,0 +1,27 @@
+name: CatchWorld Archetype1 1153 Full Analysis
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install pandas numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: catchworld-strategy-b-scout-*
+          path: strategy_b_input
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 35128138456
+          repository: wasabtc-cloud/DaonFutures
+      - name: Analyze 1153-event archetype lifecycle and substructure
+        run: python backtest/catchworld_archetype1_1153_full_analysis.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-archetype1-1153-full
+          path: results/archetype1_1153_full/
+          retention-days: 90
