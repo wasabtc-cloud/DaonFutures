@@ -18,24 +18,30 @@ for _ in range(80):
  if np.allclose(C,N,atol=1e-5):break
  C=N
 e['cluster']=lab;target=e[e.cluster==2][['market','time']].rename(columns={'time':'event_time'})
-# Test a small, interpretable family of persistence definitions in the final 48h.
-# Signal must occur before event anchor and price must not already be +10% in 24h.
+# Cache each market once and slice only the 48h event windows once.
+by_market={m:g.set_index('time').sort_index() for m,g in d.groupby('market',sort=False)}
+event_windows=[]
+for ev in target.itertuples(index=False):
+ g=by_market.get(ev.market)
+ if g is None:continue
+ w=g.loc[(g.index>=ev.event_time-pd.Timedelta(hours=48))&(g.index<ev.event_time),['turn_ratio','turn_accel_6_24','ret_24h']].copy()
+ event_windows.append((ev.market,ev.event_time,w))
 rows=[];detail=[]
 for tr in [2,3,4]:
  for min_hits in [3,6,12]:
   for span in [12,24,48]:
    caught=0;leads=[]
-   for _,ev in target.iterrows():
-    g=d[(d.market==ev.market)&(d.time>=ev.event_time-pd.Timedelta(hours=48))&(d.time<ev.event_time)].copy()
-    g['hit']=(g.turn_ratio>=tr)&(g.ret_24h<.10)
-    found=None
-    for i in range(len(g)):
-     t=g.iloc[i].time;w=g[(g.time>=t-pd.Timedelta(hours=span))&(g.time<=t)]
-     # persistence = repeated abnormal turnover, plus at least one acceleration reading
-     if w.hit.sum()>=min_hits and ((w.turn_accel_6_24>=1).sum()>=1):found=t;break
-    if found is not None:
-     caught+=1;lead=(ev.event_time-found).total_seconds()/3600;leads.append(lead);detail.append({'tr':tr,'min_hits':min_hits,'span':span,'market':ev.market,'event_time':ev.event_time,'signal_time':found,'lead_hours':lead})
-   rows.append({'turn_ratio_min':tr,'min_hits':min_hits,'window_hours':span,'caught':caught,'recall_128':caught/len(target),'median_lead_h':np.median(leads) if leads else np.nan,'lead_ge_6h':np.mean(np.array(leads)>=6) if leads else np.nan,'lead_ge_12h':np.mean(np.array(leads)>=12) if leads else np.nan,'lead_ge_24h':np.mean(np.array(leads)>=24) if leads else np.nan})
+   for market,event_time,g in event_windows:
+    if g.empty:continue
+    hit=((g.turn_ratio>=tr)&(g.ret_24h<.10)).astype('int8')
+    accel=(g.turn_accel_6_24>=1).astype('int8')
+    # Hourly data: rolling window implements the same persistence test without nested dataframe filtering.
+    hp=hit.rolling(f'{span}h',min_periods=1).sum();ap=accel.rolling(f'{span}h',min_periods=1).sum()
+    ok=(hp>=min_hits)&(ap>=1)
+    if ok.any():
+     found=ok.index[np.flatnonzero(ok.to_numpy())[0]];caught+=1;lead=(event_time-found).total_seconds()/3600;leads.append(lead);detail.append({'tr':tr,'min_hits':min_hits,'span':span,'market':market,'event_time':event_time,'signal_time':found,'lead_hours':lead})
+   a=np.asarray(leads)
+   rows.append({'turn_ratio_min':tr,'min_hits':min_hits,'window_hours':span,'caught':caught,'recall_128':caught/len(target),'median_lead_h':np.median(a) if len(a) else np.nan,'lead_ge_6h':np.mean(a>=6) if len(a) else np.nan,'lead_ge_12h':np.mean(a>=12) if len(a) else np.nan,'lead_ge_24h':np.mean(a>=24) if len(a) else np.nan})
 r=pd.DataFrame(rows).sort_values(['recall_128','median_lead_h'],ascending=False);q=pd.DataFrame(detail)
 r.to_csv(OUT+'/persistent_flow_rules.csv',index=False);q.to_csv(OUT+'/signals.csv',index=False);target.to_csv(OUT+'/target_128.csv',index=False)
 print('TARGET',len(target));print(r.to_string(index=False))
