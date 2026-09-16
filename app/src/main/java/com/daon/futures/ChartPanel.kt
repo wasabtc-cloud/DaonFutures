@@ -2,19 +2,13 @@ package com.daon.futures
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -26,15 +20,160 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-fun emaSeries(values: List<Double>, period: Int): List<Double> { if(values.isEmpty()) return emptyList(); val k=2.0/(period+1.0); val out=MutableList(values.size){0.0}; var ema=values.first(); out[0]=ema; for(i in 1 until values.size){ema=values[i]*k+ema*(1-k);out[i]=ema};return out }
-fun rsiValue(values: List<Double>, period:Int=14):Double { if(values.size<=period)return 50.0;var gains=0.0;var losses=0.0;for(i in values.size-period until values.size){val d=values[i]-values[i-1];if(d>=0)gains+=d else losses-=d};if(losses==0.0)return 100.0;val rs=(gains/period)/(losses/period);return 100-100/(1+rs) }
-private data class MoneyFlowMark(val index:Int,val level:Int)
-private fun moneyFlowMarks(candles:List<Candle>):List<MoneyFlowMark>{if(candles.size<12)return emptyList();val ranges=candles.map{max(0.0,it.high-it.low)};val marks=mutableListOf<MoneyFlowMark>();for(i in 10 until candles.size){val base=ranges.subList(i-10,i).average().coerceAtLeast(1e-9);val impulse=ranges[i]/base;val body=abs(candles[i].close-candles[i].open)/base;val level=when{impulse>=2.8&&body>=1.0->3;impulse>=2.1&&body>=.65->2;impulse>=1.6&&body>=.35->1;else->0};if(level>0)marks+=MoneyFlowMark(i,level)};return marks.takeLast(6)}
-private data class OneCandleZone(val index:Int,val low:Double,val high:Double,val side:String,val retested:Boolean,val confirmed:Boolean,val entry:Double?,val stop:Double?,val target2R:Double?)
-private fun oneCandleZone(c:List<Candle>,e20:List<Double>,e50:List<Double>):OneCandleZone?{if(c.size<22||e20.isEmpty()||e50.isEmpty())return null;val bull=e20.last()>e50.last();val start=maxOf(0,c.size-21);val end=c.size-1;val indexed=(start until end).map{it to c[it]};val key=(if(bull) indexed.filter{(_,x)->x.close<x.open}.maxByOrNull{(_,x)->x.high} else indexed.filter{(_,x)->x.close>x.open}.minByOrNull{(_,x)->x.low})?:return null;val(idx,x)=key;val low=minOf(x.open,x.close);val high=maxOf(x.open,x.close);val after=c.drop(idx+1);val retested=after.any{x2->x2.low<=high&&x2.high>=low};val last=c.last();val confirmed=retested&&if(bull)last.close>high else last.close<low;val side=if(bull)"LONG" else "SHORT";if(!confirmed)return OneCandleZone(idx,low,high,side,retested,false,null,null,null);val entry=last.close;val stop=if(bull)low else high;val risk=if(bull)entry-stop else stop-entry;if(risk<=0)return OneCandleZone(idx,low,high,side,retested,false,null,null,null);val target=if(bull)entry+risk*2 else entry-risk*2;return OneCandleZone(idx,low,high,side,true,true,entry,stop,target)}
+fun emaSeries(values: List<Double>, period: Int): List<Double> {
+    if (values.isEmpty()) return emptyList()
+    val k = 2.0 / (period + 1.0)
+    val out = mutableListOf(values.first())
+    var ema = values.first()
+    for (i in 1 until values.size) {
+        ema = values[i] * k + ema * (1.0 - k)
+        out += ema
+    }
+    return out
+}
 
-@Composable fun MarketChartCard(symbol:String,intervalLabel:String,candles:List<Candle>,modifier:Modifier=Modifier){val visible=if(candles.size>60)candles.takeLast(60) else candles;val closes=visible.map{it.close};val e20=emaSeries(closes,20);val e50=emaSeries(closes,50);val rsi=rsiValue(closes);val zone=oneCandleZone(visible,e20,e50);val marks=moneyFlowMarks(visible);val superSignal=marks.lastOrNull()?.level==3&&zone?.confirmed==true;Card(modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text("$symbol · $intervalLabel",fontWeight=FontWeight.Bold,fontSize=18.sp);if(visible.size<2)Text("차트 데이터를 불러오는 중입니다.",color=Color.Gray) else {Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("EMA20 ${fmtChart(e20.lastOrNull())}",color=Color(0xFF35A7FF),fontSize=13.sp);Text("EMA50 ${fmtChart(e50.lastOrNull())}",color=Color(0xFFFFA000),fontSize=13.sp);Text("RSI ${String.format(Locale.KOREA,"%.1f",rsi)}",color=Color(0xFFA875FF),fontSize=13.sp)};Text("자금유입 표시 ON · ✓ 초기  ✓✓ 추가  ★ 강한 유입",color=Color(0xFF21D58B),fontWeight=FontWeight.Bold,fontSize=12.sp);if(superSignal)Text("S SUPER SIGNAL · 강한 자금유입 + 진입 후보 조건",color=Color(0xFFFFC107),fontWeight=FontWeight.ExtraBold,fontSize=14.sp);zone?.let{val col=if(it.side=="LONG")Color(0xFF21D58B) else Color(0xFFFF4058);val state=when{it.confirmed->"진입 후보";it.retested->"리테스트 확인 · 방향 확인 대기";else->"리테스트 대기"};Text("One Candle ${it.side} · 기준 ${fmtChart(it.low)} ~ ${fmtChart(it.high)} · $state",color=col,fontWeight=FontWeight.Bold,fontSize=12.sp)}?:Text("One Candle · 기준 캔들 탐색 중",color=Color.Gray,fontSize=12.sp);CandlestickCanvas(visible,e20,e50,zone,marks);zone?.takeIf{it.confirmed}?.let{Text("후보 ${fmtChart(it.entry)} · SL ${fmtChart(it.stop)} · 2R ${fmtChart(it.target2R)}",color=if(it.side=="LONG")Color(0xFF21D58B) else Color(0xFFFF4058),fontWeight=FontWeight.Bold,fontSize=12.sp)};Text("RSI 14 ${String.format(Locale.KOREA,"%.2f",rsi)}",color=Color(0xFFA875FF),fontSize=13.sp);RsiCanvas(closes)}}}}
+fun rsiValue(values: List<Double>, period: Int = 14): Double {
+    if (values.size <= period) return 50.0
+    var gains = 0.0
+    var losses = 0.0
+    for (i in values.size - period until values.size) {
+        val d = values[i] - values[i - 1]
+        if (d >= 0) gains += d else losses -= d
+    }
+    if (losses == 0.0) return 100.0
+    val rs = (gains / period) / (losses / period)
+    return 100.0 - 100.0 / (1.0 + rs)
+}
 
-@Composable private fun CandlestickCanvas(candles:List<Candle>,e20:List<Double>,e50:List<Double>,zone:OneCandleZone?,marks:List<MoneyFlowMark>){val up=Color(0xFF18C98B);val down=Color(0xFFFF4058);val blue=Color(0xFF2196F3);val orange=Color(0xFFFFA000);val grid=Color(0xFF29313D);Canvas(Modifier.fillMaxWidth().height(360.dp).background(Color(0xFF090E16),RoundedCornerShape(12.dp))){val extras=mutableListOf<Double>();zone?.let{z->extras+=z.low;extras+=z.high;z.stop?.let{extras+=it};z.target2R?.let{extras+=it}};val candleMax=candles.maxOf{it.high};val candleMin=candles.minOf{it.low};val maxP=max(candleMax,extras.maxOrNull()?:candleMax);val minP=min(candleMin,extras.minOrNull()?:candleMin);val raw=maxP-minP;val range=if(raw<=0)1.0 else raw;val top=maxP+range*.12;val bottom=minP-range*.12;val full=top-bottom;fun y(v:Double)=((top-v)/full*size.height).toFloat();val plotWidth=size.width*.88f;for(g in 1..5){val gy=size.height*g/6f;drawLine(grid,Offset(0f,gy),Offset(plotWidth,gy),1f)};val step=plotWidth/candles.size;val body=max(2f,step*.58f);zone?.let{z->val col=if(z.side=="LONG")up else down;val left=(step*z.index).coerceAtLeast(0f);val topY=min(y(z.high),y(z.low));val bottomY=max(y(z.high),y(z.low));drawRect(col.copy(alpha=.2f),Offset(left,topY),Size(plotWidth-left,max(3f,bottomY-topY)))};candles.forEachIndexed{i,c->val x=step*i+step/2;val col=if(c.close>=c.open)up else down;val oy=y(c.open);val cy=y(c.close);drawLine(col,Offset(x,y(c.high)),Offset(x,y(c.low)),1.4f);drawRect(col,Offset(x-body/2,min(oy,cy)),Size(body,max(2f,abs(cy-oy))))};fun drawEma(series:List<Double>,color:Color){if(series.size<2)return;val path=Path();series.forEachIndexed{i,v->val p=Offset(step*i+step/2,y(v));if(i==0)path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)};drawPath(path,color,style=Stroke(2.5f))};drawEma(e20,blue);drawEma(e50,orange);marks.forEach{m->val c=candles[m.index];val x=step*m.index+step/2;val my=(y(c.low)+15f).coerceAtMost(size.height-12f);val col=if(m.level==3)Color(0xFFFFC107) else up;val r=when(m.level){3->8f;2->6f;else->4.5f};drawCircle(col,r,Offset(x,my));if(m.level>=2)drawCircle(col.copy(alpha=.35f),r*1.8f,Offset(x,my))};zone?.takeIf{it.confirmed}?.let{z->val entry=z.entry;val stop=z.stop;val target=z.target2R;if(entry!=null&&stop!=null&&target!=null){val col=if(z.side=="LONG")up else down;drawLine(col,Offset(0f,y(entry)),Offset(plotWidth,y(entry)),1.8f);drawLine(down,Offset(0f,y(stop)),Offset(plotWidth,y(stop)),2.2f);drawLine(up,Offset(0f,y(target)),Offset(plotWidth,y(target)),2.2f)}};val lastY=y(candles.last().close);drawLine(Color.White.copy(alpha=.35f),Offset(0f,lastY),Offset(plotWidth,lastY),1.2f)}}
-@Composable private fun RsiCanvas(closes:List<Double>){val series=mutableListOf<Double>();for(i in closes.indices)series+=if(i<14)50.0 else rsiValue(closes.take(i+1),14);Canvas(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF090E16),RoundedCornerShape(10.dp))){fun y(v:Double)=((100-v)/100*size.height).toFloat();drawLine(Color(0xFF565B66),Offset(0f,y(70.0)),Offset(size.width,y(70.0)),1f);drawLine(Color(0xFF565B66),Offset(0f,y(30.0)),Offset(size.width,y(30.0)),1f);if(series.size>1){val step=size.width/series.size;val path=Path();series.forEachIndexed{i,v->val p=Offset(step*i+step/2,y(v));if(i==0)path.moveTo(p.x,p.y) else path.lineTo(p.x,p.y)};drawPath(path,Color(0xFF8E6CFF),style=Stroke(2.4f))}}}
-private fun fmtChart(v:Double?):String=if(v==null)"-" else String.format(Locale.KOREA,"%,.2f",v)
+private data class MoneyFlowMark(val index: Int, val level: Int)
+
+private fun moneyFlowMarks(candles: List<Candle>): List<MoneyFlowMark> {
+    if (candles.size < 12) return emptyList()
+    val ranges = candles.map { max(0.0, it.high - it.low) }
+    val marks = mutableListOf<MoneyFlowMark>()
+    for (i in 10 until candles.size) {
+        val base = ranges.subList(i - 10, i).average().coerceAtLeast(1e-9)
+        val impulse = ranges[i] / base
+        val body = abs(candles[i].close - candles[i].open) / base
+        val level = when {
+            impulse >= 2.8 && body >= 1.0 -> 3
+            impulse >= 2.1 && body >= 0.65 -> 2
+            impulse >= 1.6 && body >= 0.35 -> 1
+            else -> 0
+        }
+        if (level > 0) marks += MoneyFlowMark(i, level)
+    }
+    return marks.takeLast(6)
+}
+
+@Composable
+fun MarketChartCard(
+    symbol: String,
+    intervalLabel: String,
+    candles: List<Candle>,
+    modifier: Modifier = Modifier,
+    exchange: String = "MARKET"
+) {
+    val visible = candles.takeLast(60)
+    val closes = visible.map { it.close }
+    val ema20 = emaSeries(closes, 20)
+    val ema50 = emaSeries(closes, 50)
+    val rsi = rsiValue(closes)
+    val marks = moneyFlowMarks(visible)
+    val latestLevel = marks.lastOrNull()?.level ?: 0
+
+    Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("$symbol · $intervalLabel · $exchange", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            if (visible.size < 2) {
+                Text("차트 데이터를 불러오는 중입니다.", color = Color.Gray)
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("EMA20 ${fmtChart(ema20.lastOrNull())}", color = Color(0xFF35A7FF), fontSize = 13.sp)
+                    Text("EMA50 ${fmtChart(ema50.lastOrNull())}", color = Color(0xFFFFA000), fontSize = 13.sp)
+                    Text("RSI ${String.format(Locale.KOREA, "%.1f", rsi)}", color = Color(0xFFA875FF), fontSize = 13.sp)
+                }
+                Text("자금유입 연구표시 · ✓ 초기  ✓✓ 추가  ★ 강한 유입", color = Color(0xFF21D58B), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                if (latestLevel == 3) {
+                    Text("S 후보 · 강한 움직임 감지 (검증 중)", color = Color(0xFFFFC107), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                }
+                CandlestickCanvas(visible, ema20, ema50, marks)
+                Text("RSI 14 ${String.format(Locale.KOREA, "%.2f", rsi)}", color = Color(0xFFA875FF), fontSize = 13.sp)
+                RsiCanvas(closes)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CandlestickCanvas(candles: List<Candle>, ema20: List<Double>, ema50: List<Double>, marks: List<MoneyFlowMark>) {
+    Canvas(Modifier.fillMaxWidth().height(360.dp).background(Color(0xFF090E16), RoundedCornerShape(12.dp))) {
+        val up = Color(0xFF18C98B)
+        val down = Color(0xFFFF4058)
+        val maxP = candles.maxOf { it.high }
+        val minP = candles.minOf { it.low }
+        val range = (maxP - minP).takeIf { it > 0.0 } ?: 1.0
+        val top = maxP + range * 0.1
+        val bottom = minP - range * 0.1
+        fun y(v: Double) = ((top - v) / (top - bottom) * size.height).toFloat()
+        val plotWidth = size.width * 0.9f
+        val step = plotWidth / candles.size
+        val bodyWidth = max(2f, step * 0.58f)
+
+        for (g in 1..5) {
+            val gy = size.height * g / 6f
+            drawLine(Color(0xFF29313D), Offset(0f, gy), Offset(plotWidth, gy), 1f)
+        }
+        candles.forEachIndexed { i, candle ->
+            val x = step * i + step / 2f
+            val color = if (candle.close >= candle.open) up else down
+            val openY = y(candle.open)
+            val closeY = y(candle.close)
+            drawLine(color, Offset(x, y(candle.high)), Offset(x, y(candle.low)), 1.4f)
+            drawRect(color, Offset(x - bodyWidth / 2f, min(openY, closeY)), androidx.compose.ui.geometry.Size(bodyWidth, max(2f, abs(closeY - openY))))
+        }
+        fun drawEma(series: List<Double>, color: Color) {
+            if (series.size < 2) return
+            val path = Path()
+            series.forEachIndexed { i, value ->
+                val p = Offset(step * i + step / 2f, y(value))
+                if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            }
+            drawPath(path, color, style = Stroke(2.5f))
+        }
+        drawEma(ema20, Color(0xFF2196F3))
+        drawEma(ema50, Color(0xFFFFA000))
+        marks.forEach { mark ->
+            if (mark.index < candles.size) {
+                val x = step * mark.index + step / 2f
+                val yy = (y(candles[mark.index].low) + 15f).coerceAtMost(size.height - 12f)
+                val color = if (mark.level == 3) Color(0xFFFFC107) else up
+                val radius = when (mark.level) { 3 -> 8f; 2 -> 6f; else -> 4.5f }
+                drawCircle(color, radius, Offset(x, yy))
+            }
+        }
+        val lastY = y(candles.last().close)
+        drawLine(Color.White.copy(alpha = 0.35f), Offset(0f, lastY), Offset(plotWidth, lastY), 1.2f)
+    }
+}
+
+@Composable
+private fun RsiCanvas(closes: List<Double>) {
+    val series = closes.indices.map { i -> if (i < 14) 50.0 else rsiValue(closes.take(i + 1), 14) }
+    Canvas(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF090E16), RoundedCornerShape(10.dp))) {
+        fun y(v: Double) = ((100.0 - v) / 100.0 * size.height).toFloat()
+        drawLine(Color(0xFF565B66), Offset(0f, y(70.0)), Offset(size.width, y(70.0)), 1f)
+        drawLine(Color(0xFF565B66), Offset(0f, y(30.0)), Offset(size.width, y(30.0)), 1f)
+        if (series.size > 1) {
+            val step = size.width / series.size
+            val path = Path()
+            series.forEachIndexed { i, value ->
+                val p = Offset(step * i + step / 2f, y(value))
+                if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            }
+            drawPath(path, Color(0xFF8E6CFF), style = Stroke(2.4f))
+        }
+    }
+}
+
+private fun fmtChart(value: Double?): String = if (value == null) "-" else String.format(Locale.KOREA, "%,.2f", value)
