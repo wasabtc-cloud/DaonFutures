@@ -1,0 +1,33 @@
+name: Catch World Crypto Market Flow Validation
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days to validate
+        required: true
+        default: '365'
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas requests
+      - name: Collect market-wide hourly turnover
+        env:
+          DAYS: ${{ inputs.days }}
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: 8
+        run: python backtest/catchworld_crypto_market_flow_hourly.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-market-flow-${{ inputs.days }}d-${{ matrix.shard }}
+          path: market_flow_hourly_shard_${{ matrix.shard }}.csv
+          retention-days: 90
