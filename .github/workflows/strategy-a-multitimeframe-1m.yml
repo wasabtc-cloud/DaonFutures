@@ -1,0 +1,33 @@
+name: Strategy A MultiTF 1M
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/strategy_a_multitimeframe_1m.py'
+      - '.github/workflows/strategy-a-multitimeframe-1m.yml'
+
+concurrency:
+  group: strategy-a-multitf-1m
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install pandas numpy requests
+      - name: Run Strategy A multi-timeframe one-month benchmark
+        run: python backtest/strategy_a_multitimeframe_1m.py
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strategy-a-multitf-1m
+          retention-days: 30
+          path: results/strategy_a_multitimeframe_1m/
