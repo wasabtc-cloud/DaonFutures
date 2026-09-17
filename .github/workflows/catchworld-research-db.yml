@@ -1,0 +1,41 @@
+name: CatchWorld Research DB
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/catchworld_research_db.py'
+      - '.github/workflows/catchworld-research-db.yml'
+  schedule:
+    - cron: '20 16 * * *'
+jobs:
+  update-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore research DB
+        uses: actions/cache/restore@v4
+        with:
+          path: data/catchworld_research_db
+          key: catchworld-research-db-${{ github.run_id }}
+          restore-keys: |
+            catchworld-research-db-
+      - run: pip install pandas requests
+      - name: Incremental update
+        run: python backtest/catchworld_research_db.py
+      - name: Save research DB
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: data/catchworld_research_db
+          key: catchworld-research-db-${{ github.run_id }}
+      - name: Upload DB snapshot
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catchworld-research-db
+          path: data/catchworld_research_db/
+          retention-days: 7
