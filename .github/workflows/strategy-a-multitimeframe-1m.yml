@@ -31,3 +31,4 @@ jobs:
           name: strategy-a-multitf-1m
           retention-days: 30
           path: results/strategy_a_multitimeframe_1m/
+# rerun marker: 2026-09-17T19:32+09:00
