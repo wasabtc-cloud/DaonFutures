@@ -1,0 +1,26 @@
+name: Strategy A2 MultiTF
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backtest/strategy_a2_multitf_validation.py'
+      - '.github/workflows/strategy-a2-multitf.yml'
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas numpy requests
+      - name: Run A2 validation
+        run: python backtest/strategy_a2_multitf_validation.py
+      - name: Upload A2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strategy-a2-multitf
+          path: results/strategy_a2_multitf/
+          retention-days: 30
